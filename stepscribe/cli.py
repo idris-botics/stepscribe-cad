@@ -78,6 +78,18 @@ Path_ = Annotated[Path, typer.Argument(exists=True, help="A .step/.stp file or a
 Out = Annotated[Path, typer.Option("--out", "-o", help="Output directory.")]
 
 
+def _declare_process(opts: AnalyzeOptions, process: str | None) -> None:
+    """Put a ``--process`` value (fdm, sheet, cnc or unknown) into the options, or refuse it plainly."""
+    if process is None:
+        return
+    from stepscribe.understanding.process import declared_process
+
+    label = declared_process(process)
+    if label is None:
+        raise typer.BadParameter("must be one of fdm, sheet, cnc, unknown", param_hint="--process")
+    opts.extra["default_process"] = label
+
+
 def _options(
     material: str | None,
     density: float | None,
@@ -225,6 +237,13 @@ def pack(
     ],
     out: Out = Path("out"),
     context: Annotated[Path | None, typer.Option("--context", help="design_context.yaml")] = None,
+    process: Annotated[
+        str | None,
+        typer.Option(
+            "--process",
+            help="How the parts are made, for the guidelines: fdm, sheet, cnc or unknown.",
+        ),
+    ] = None,
     material: Annotated[
         str | None, typer.Option(help="Material keyword, e.g. alu, steel, pla.")
     ] = None,
@@ -354,6 +373,7 @@ def pack(
             pivot_min_diameter=pivot_min_diameter,
             pivot_min_length_ratio=pivot_min_length_ratio,
         )
+        _declare_process(opts, process)
         images_on, image_export = _image_params(images, image_max_side, no_images)
         tpl = {
             "out_dir": str(out),
@@ -436,6 +456,13 @@ def export(
         ),
     ] = limits.IMAGE_MAX_SIDE,
     context: Annotated[Path | None, typer.Option("--context", help="design_context.yaml")] = None,
+    process: Annotated[
+        str | None,
+        typer.Option(
+            "--process",
+            help="How the parts are made, for the guidelines: fdm, sheet, cnc or unknown.",
+        ),
+    ] = None,
     material: Annotated[str | None, typer.Option(help="Material keyword, e.g. alu.")] = None,
     density: Annotated[float | None, typer.Option(help="Density in g/cm3.")] = None,
     up: Annotated[str, typer.Option(help="Up axis: +X,-X,+Y,-Y,+Z,-Z")] = "+Z",
@@ -525,6 +552,7 @@ def export(
         pivot_min_diameter=pivot_min_diameter,
         pivot_min_length_ratio=pivot_min_length_ratio,
     )
+    _declare_process(opts, process)
     images_on, image_export = _image_params(images, image_max_side, no_images)
     tpl = {
         "out_dir": str(out),

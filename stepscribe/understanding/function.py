@@ -44,6 +44,7 @@ from stepscribe.understanding.kinematics import (
 )
 from stepscribe.understanding.ml_roles import RoleModel, load_role_models, role_scores
 from stepscribe.understanding.process import is_complex_guess
+from stepscribe.understanding.process import rules as process_rules
 from stepscribe.understanding.unjointed import (
     many_unjointed,
     unjointed_share,
@@ -743,6 +744,22 @@ def design_summary(
         else:
             sentences.append(
                 f"Fabricated parts are a mix, mostly {label.replace('_', ' ')} ({n} of {len(fab)})"
+            )
+        floor = float(process_rules()["guideline_min_confidence"])
+        weak = [
+            p.understanding.process.ranked[0].confidence
+            for p in fab
+            if p.understanding
+            and p.understanding.process.source != "user"
+            and p.understanding.process.ranked[0].label == label
+            and p.understanding.process.ranked[0].confidence < floor
+        ]
+        if weak:  # a guess below the floor is said to be one, and no guideline follows from it
+            lo, hi = f"{min(weak):.2f}", f"{max(weak):.2f}"
+            span = lo if lo == hi else f"{lo} to {hi}"
+            sentences[-1] += (
+                f" (a guess, confidence {span}: the process is not declared, so no "
+                "process-specific guideline is used)"
             )
     complex_parts = [
         p for p in fab if p.understanding and is_complex_guess(p.understanding.process)

@@ -335,6 +335,17 @@ def name_hits(name: str, r: dict[str, Any]) -> dict[str, str]:
     return hits
 
 
+def declared_process(text: str | None) -> str | None:
+    """A declared process (``fdm``, ``sheet``, ``cnc``, ``unknown`` or a process name) as its label, or None."""
+    if text is None:
+        return None
+    word = str(text).strip().lower().replace(" ", "_").replace("-", "_")
+    words = rules()["declared_words"]
+    if word in words:
+        return str(words[word])
+    return word if word in PROCESSES else None
+
+
 def user_process(ctx_text: str | None, r: dict[str, Any]) -> str | None:
     """Map a free-text ``manufacturing`` entry to a process label."""
     if not ctx_text:
@@ -392,6 +403,13 @@ def infer_process(
 ) -> ProcessGuess:
     """Rank manufacturing processes for *part*; *override* (a process label) wins at 1.0."""
     r = rules()
+    if override == "unknown":  # the designer says the process is not known: no guess, no guideline
+        ev = Evidence(
+            code="user", refs=[part.id], weight=1.0, text="the designer does not know the process"
+        )
+        return ProcessGuess(
+            ranked=[Hypothesis(label="unknown", confidence=1.0, evidence=[ev])], source="user"
+        )
     if override in PROCESSES:
         ev = Evidence(code="user", refs=[part.id], weight=1.0, text="process given by the designer")
         return ProcessGuess(

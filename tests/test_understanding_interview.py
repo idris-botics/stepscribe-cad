@@ -176,8 +176,9 @@ def _opts_with(ctx: Path) -> AnalyzeOptions:
 def test_terminal_interview_with_scripted_input(step_files, tmp_path: Path) -> None:  # type: ignore[no-untyped-def]
     ctx = tmp_path / "design_context.yaml"
     out = tmp_path / "pack"
-    # 1 = material list, option 4 is pla; then skip one, mark one not sure, then done
-    script = "4\ns\n?\nd\n"
+    # 1 = the process (asked first), option 3 is CNC milled; 2 = material list, option 4 is pla; then skip
+    # one, mark one not sure, then done
+    script = "3\n4\ns\n?\nd\n"
     r = CliRunner().invoke(
         app,
         [
@@ -194,7 +195,7 @@ def test_terminal_interview_with_scripted_input(step_files, tmp_path: Path) -> N
     assert "Mass updated" in r.output and "Answers saved" in r.output
     data = yaml.safe_load(ctx.read_text(encoding="utf-8"))
     statuses = sorted(v["status"] for v in data["answers"].values())
-    assert statuses == ["answered", "not_sure", "skipped"]
+    assert statuses == ["answered", "answered", "not_sure", "skipped"]
     md = next(out.glob("*_context_pack")) / "05_understanding.md"
     text = md.read_text(encoding="utf-8")
     assert "Confirmed by designer" in text and "Designer unsure" in text
