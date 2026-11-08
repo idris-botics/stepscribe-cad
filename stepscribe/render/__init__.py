@@ -57,11 +57,40 @@ ASSEMBLY_VIEWS = ("iso", "front", "top")
 
 
 _clock = {"t": time.time()}
+_made: set[str] = set()  # file names saved in the current run (to tell what a failure left undone)
+
+
+def image_reason(exc: BaseException) -> str:
+    """A short plain reason for an image that was not drawn: the error type and a cleaned message."""
+    from stepscribe.text_safety import clean_name
+
+    text = clean_name(str(exc))[:80]
+    return f"{type(exc).__name__}: {text}" if text else type(exc).__name__
+
+
+def guarded(
+    tracker: Tracker | None,
+    failures: list[tuple[str, str]],
+    planned: list[str],
+    fn: Any,
+) -> None:
+    """Run one image's drawing; an exception is recorded and the planned images it did not make are
+    counted as skipped, so one failing picture never stops the pack."""
+    try:
+        fn()
+    except Exception as exc:  # noqa: BLE001 - a picture must never stop the pack
+        reason = image_reason(exc)
+        for rel in planned:
+            if Path(rel).name not in _made:
+                failures.append((rel, reason))
+                if tracker is not None:
+                    tracker.image_skipped(Path(rel).name, reason)
 
 
 def _save(tracker: Tracker | None, image, path: str) -> None:  # type: ignore[no-untyped-def]
     """Save a PNG and report how long the image took to produce."""
     save_png(image, path)
+    _made.add(Path(path).name)
     now = time.time()
     if tracker is not None:
         tracker.image_done(Path(path).name, now - _clock["t"])
@@ -201,13 +230,22 @@ def _unit(h) -> np.ndarray:  # type: ignore[no-untyped-def]
 
 
 def render_part_images(
-    analysis: Analysis, folder: Path, up: str, front: str, tracker: Tracker | None = None
+    analysis: Analysis,
+    folder: Path,
+    up: str,
+    front: str,
+    tracker: Tracker | None = None,
+    failures: list[tuple[str, str]] | None = None,
 ) -> None:
-    """``images/parts/PRTxxx_iso.png`` and ``PRTxxx_axis.png`` (looking down the dominant hole axis)."""
+    """``images/parts/PRTxxx_iso.png`` and ``PRTxxx_axis.png`` (looking down the dominant hole axis).
+
+    A part whose drawing fails is recorded in *failures* and the other parts are still drawn."""
     out_dir = folder / "images" / "parts"
     out_dir.mkdir(parents=True, exist_ok=True)
     by_id = {ap.part.id: ap for ap in analysis.parts}
-    for part in rank_parts([ap.part for ap in analysis.parts])[:MAX_PART_IMAGES]:
+    failed: list[tuple[str, str]] = failures if failures is not None else []
+
+    def _one(part: Any) -> None:
         ap = by_id[part.id]
         item = SceneItem(
             part.id,
@@ -293,6 +331,12 @@ def render_part_images(
             )
             part.images.append(f"images/parts/{part.id}_axis.png")
 
+    for part in rank_parts([ap.part for ap in analysis.parts])[:MAX_PART_IMAGES]:
+        planned = [f"images/parts/{part.id}_iso.png"]
+        if dominant_hole_axis(part) is not None:
+            planned.append(f"images/parts/{part.id}_axis.png")
+        guarded(tracker, failed, planned, lambda part=part: _one(part))
+
 
 def render_pack_images(
     analysis: Analysis,
@@ -301,11 +345,17 @@ def render_pack_images(
     image_set: str = "basic",
     max_side: int = 1200,
 ) -> list[str]:
-    """Write the assembly image set and part images into *folder*; returns assembly image paths."""
+    """Write the assembly image set and part images into *folder*; returns assembly image paths.
+
+    The list of images is planned first and the progress total is its length. An image that fails to draw
+    is recorded (report warning, images/INDEX.md, the read-me) and the others are still made."""
+    from stepscribe.render.plan import plan_images
+
     report = analysis.report
     if not rendering_available():
         return []  # no usable OpenGL: the pack is written without images
     _clock["t"] = time.time()
+    _made.clear()
     if tracker is not None:
         tracker.stage("render", "rendering labelled images")
     up = report.assembly.up_axis if report.assembly else str(report.meta.options.get("up", "+Z"))
@@ -314,7 +364,15 @@ def render_pack_images(
         if report.assembly
         else str(report.meta.options.get("front", "-Y"))
     )
-    items = build_scene(analysis)
+    failures: list[tuple[str, str]] = []
+    items: list[SceneItem] = []
+    try:
+        items = build_scene(analysis)
+    except Exception as exc:  # noqa: BLE001 - without a scene there are no assembly images
+        failures.append(("images/assembly_*.png", image_reason(exc)))
+    plan = plan_images(analysis, image_set, has_scene=bool(items))
+    if tracker is not None:
+        tracker.plan_images(plan.total)
     written: list[str] = []
     if items:
         (folder / "images").mkdir(parents=True, exist_ok=True)
@@ -325,7 +383,8 @@ def render_pack_images(
         caption = size_caption(assembled, up, front)
         kin = report.understanding.kinematics if report.understanding else None
         diag = float(np.linalg.norm(assembled[1] - assembled[0]))
-        for view in ASSEMBLY_VIEWS:
+
+        def view_image(view: str) -> None:
             cam = standard_camera(view, items, up, front)
             r = render_labelled(items, cam, labels, legend=legend)
             annotate(r, cam, assembled, caption, lines=view != "iso")
@@ -333,20 +392,34 @@ def render_pack_images(
                 draw_joint_arrows(r, kin, diag)
             _save(tracker, r.image, str(folder / "images" / f"assembly_{view}.png"))
             written.append(f"images/assembly_{view}.png")
-        exploded = copy.deepcopy([_shallow(i) for i in items])
-        apply_explode(exploded)
-        cam = standard_camera("iso", exploded, up, front)
-        r = render_labelled(exploded, cam, labels, legend=legend)
-        annotate(
-            r,
-            cam,
-            scene_bounds(exploded),
-            "Exploded view (parts moved apart). Assembled: " + caption.removeprefix("Overall "),
-            lines=False,
-        )
-        _save(tracker, r.image, str(folder / "images" / "assembly_exploded.png"))
-        written.append("images/assembly_exploded.png")
-        if kin is not None and kin.joints:
+
+        for view in ASSEMBLY_VIEWS:
+            guarded(
+                tracker,
+                failures,
+                [f"images/assembly_{view}.png"],
+                lambda view=view: view_image(view),
+            )
+
+        def exploded_image() -> None:
+            exploded = copy.deepcopy([_shallow(i) for i in items])
+            apply_explode(exploded)
+            cam = standard_camera("iso", exploded, up, front)
+            r = render_labelled(exploded, cam, labels, legend=legend)
+            annotate(
+                r,
+                cam,
+                scene_bounds(exploded),
+                "Exploded view (parts moved apart). Assembled: " + caption.removeprefix("Overall "),
+                lines=False,
+            )
+            _save(tracker, r.image, str(folder / "images" / "assembly_exploded.png"))
+            written.append("images/assembly_exploded.png")
+
+        guarded(tracker, failures, ["images/assembly_exploded.png"], exploded_image)
+
+        def kinematics_image() -> None:
+            assert kin is not None
             kitems = recolor_by_link(items, kin)
             cam = standard_camera("iso", kitems, up, front)
             r = render_labelled(kitems, cam, link_labels(kin), legend=link_legend(kin))
@@ -360,12 +433,32 @@ def render_pack_images(
             draw_joint_arrows(r, kin, diag)
             _save(tracker, r.image, str(folder / "images" / "kinematics_iso.png"))
             written.append("images/kinematics_iso.png")
-    render_part_images(analysis, folder, up, front, tracker)
+
+        if kin is not None and kin.joints:
+            guarded(tracker, failures, ["images/kinematics_iso.png"], kinematics_image)
+    render_part_images(analysis, folder, up, front, tracker, failures)
     if image_set in ("standard", "full"):  # the basic set stops here: exactly the images of old
         from stepscribe.render.extra_images import render_extra_images
 
-        extra = render_extra_images(analysis, folder, image_set, max_side, up, front, tracker)
+        extra = render_extra_images(
+            analysis, folder, image_set, max_side, up, front, tracker, plan, failures
+        )
         written.extend(extra.assembly_files)
+    elif failures:
+        from stepscribe.render.extra_images import write_index
+
+        (folder / "images").mkdir(parents=True, exist_ok=True)
+        write_index(
+            folder,
+            report,
+            image_set,
+            max_side,
+            [],
+            [f"{r}: not drawn ({why})" for r, why in failures],
+        )
+    # one visible warning per image that was not drawn: report.json, the read-me and the index carry it
+    for rel, why in failures:
+        report.warnings.append(f"image not drawn: {rel} ({why})")
     return written
 
 

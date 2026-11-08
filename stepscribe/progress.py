@@ -49,7 +49,8 @@ class Tracker:
         self.pairs_done = 0
         self.pair_seconds = 0.0
         self.images_total = 0
-        self.images_done = 0
+        self.images_done = 0  # drawn plus skipped: the counter ends at images_total
+        self.images_skipped = 0
         self.image_seconds = 0.0
         self.stage_name = "reading"
         self.images_wanted = False
@@ -65,6 +66,13 @@ class Tracker:
         self.expect_assembly = expect_assembly
         self.images_total = images or (5 + 2 * min(n_parts, 20) if self.images_wanted else 0)
         self.stage("parts", f"analysing {n_parts} part(s), {total_faces} faces")
+
+    def plan_images(self, total: int) -> None:
+        """The exact number of images the renderer will make or skip, known once the analysis is done
+        (it replaces the rough number from :meth:`plan_parts`)."""
+        self.images_total = total
+        self.images_done = 0
+        self.images_skipped = 0
 
     def plan_pairs(self, pairs: int) -> None:
         """Called after the contact broad phase."""
@@ -93,6 +101,12 @@ class Tracker:
         self.images_done += 1
         self.image_seconds += seconds
         self.emit(f"rendered {name} ({self.images_done}/{self.images_total})")
+
+    def image_skipped(self, name: str, reason: str) -> None:
+        """A planned image that was not drawn (a cap, nothing to show, or a failure): it still counts."""
+        self.images_done += 1
+        self.images_skipped += 1
+        self.emit(f"skipped {name} ({self.images_done}/{self.images_total}): {reason}")
 
     # ---- estimate
     def _part_rate(self) -> float:

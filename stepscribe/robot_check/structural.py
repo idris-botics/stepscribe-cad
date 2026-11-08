@@ -324,6 +324,11 @@ def check_against_robot_json(urdf: Urdf, robot: dict[str, Any]) -> list[Finding]
     out: list[Finding] = []
     by_name = {j.name: j for j in urdf.joints}
     listed = robot.get("joints", [])
+    if "base_link" in robot and isinstance(listed, list):
+        from stepscribe.pack.robot import joints_in_tree
+
+        # a joint that nothing ties to the base link is left out of the URDF on purpose (see S055)
+        listed = joints_in_tree({"base_link": robot["base_link"], "joints": listed, "links": []})
     if len(listed) != len(urdf.joints):
         out.append(
             _err(
@@ -366,6 +371,25 @@ def check_against_robot_json(urdf: Urdf, robot: dict[str, Any]) -> list[Finding]
                     w,
                 )
             )
+    in_urdf = {x.name for x in urdf.links}
+    absent = [
+        str(x.get("id"))
+        for x in robot.get("links", [])
+        if isinstance(x, dict) and str(x.get("id")) not in in_urdf
+    ]
+    if (
+        absent
+    ):  # on purpose: a URDF is one tree, and no joint connects these rigid groups to the base
+        shown = ", ".join(show(a) for a in absent[:12]) + (", ..." if len(absent) > 12 else "")
+        out.append(
+            Finding(
+                "S055",
+                "info",
+                f"robot.json lists {len(absent)} rigid group(s) that the URDF does not have ({shown}): "
+                "no joint connects them to the base link, so they were left out of the URDF on purpose.",
+                "",
+            )
+        )
     return out
 
 

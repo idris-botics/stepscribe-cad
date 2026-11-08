@@ -7,7 +7,6 @@ from __future__ import annotations
 import json
 import tempfile
 import time
-import traceback
 from pathlib import Path
 from typing import Any
 
@@ -76,6 +75,8 @@ def run_job(job: dict[str, Any], queue: Any, cmd_q: Any = None, reply_q: Any = N
 
     started = time.time()
     work = tempfile.TemporaryDirectory(prefix="stepscribe_ui_in_")
+    tracker: Tracker | None = None
+    analysis: Any = None
     try:
         opts = job_options(job)
         context_file = job.get("context_file")
@@ -118,11 +119,31 @@ def run_job(job: dict[str, Any], queue: Any, cmd_q: Any = None, reply_q: Any = N
                 idle_s=float(job.get("session_idle_s") or IDLE_SECONDS),
             )
     except Exception as exc:  # noqa: BLE001
+        from stepscribe.pack.failure import failure
+        from stepscribe.pack.writer import pack_folder
+
+        out = Path(job["out"])
+        kept = pack_folder(analysis, out) if analysis is not None else None
+        kin = (
+            analysis.report.understanding.kinematics
+            if analysis is not None and analysis.report.understanding is not None
+            else None
+        )
+        info = failure(
+            exc,
+            out,
+            Path(str(job.get("path", "run"))).stem,
+            tracker.stage_name if tracker is not None else None,
+            kept,
+            robot_expected=bool(kin is not None and kin.joints),
+        )
         queue.put(
             {
                 "type": "error",
-                "message": f"{type(exc).__name__}: {exc}",
-                "trace": traceback.format_exc(limit=6),
+                "message": info.message,
+                "log": info.log,
+                "saved": info.saved,
+                "trace": info.trace,
             }
         )
     finally:

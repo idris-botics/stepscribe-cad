@@ -85,6 +85,8 @@ class JobState:
     message: str = "starting"
     fraction: float = 0.0
     eta_s: float | None = None
+    error_log: str | None = None  # the file with the full traceback
+    error_saved: str | None = None  # what the stopped run did and did not save
     elapsed_s: float = 0.0
     done: bool = False
     error: str | None = None
@@ -214,6 +216,8 @@ class App:
                     state.done = True
                 elif kind == "error":
                     state.error = msg["message"]
+                    state.error_log = msg.get("log")
+                    state.error_saved = msg.get("saved")
                     state.done = True
         finally:
             if not released:
@@ -580,6 +584,8 @@ def make_handler(app: App) -> type[BaseHTTPRequestHandler]:
                     "elapsed_s": s.elapsed_s or time.time() - s.started,
                     "done": s.done,
                     "error": s.error,
+                    "error_log": s.error_log,
+                    "error_saved": s.error_saved,
                     "result": s.result,
                     "job": s.id,
                 },

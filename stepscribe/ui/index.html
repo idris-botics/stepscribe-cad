@@ -308,7 +308,7 @@ async function poll() {
   $('progEta').textContent = s.done ? `Elapsed ${fmtT(s.elapsed_s)}` : `Elapsed ${fmtT(s.elapsed_s)}; remaining ${fmtEta(s.eta_s)} (the estimate improves as parts finish)`;
   if (s.done) {
     clearInterval(timer); $('go').disabled = false; $('cancel').disabled = true;
-    if (s.error) { $('progTitle').textContent = 'Stopped'; $('err').textContent = s.error; return; }
+    if (s.error) { $('progTitle').textContent = 'Stopped'; $('progCancelRow').style.display = 'none'; $('err').textContent = [s.error, s.error_saved, s.error_log ? 'Full details (the traceback): ' + s.error_log : ''].filter(Boolean).join('\n'); return; }
     $('progTitle').textContent = 'Done'; $('progCard').classList.add('done'); result = s.result; show(s); reveal($('progCard'));
   }
 }
