@@ -80,7 +80,7 @@ class MassProperties(_M):
     density_g_cm3: float | None = None
     mass_g: float | None = None
     material_assumed: str | None = None
-    material_source: Literal["user", "step_file", "name_guess", "none"] = "none"
+    material_source: Literal["user", "step_file", "name_guess", "none", "designer_mass"] = "none"
     inertia_tensor_g_mm2: list[list[float]] | None = None
     designer_mass: DesignerMass | None = None  # absent unless the designer gave a mass for the part
 

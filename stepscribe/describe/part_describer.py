@@ -32,6 +32,8 @@ def shape_label(sc: ShapeClass) -> str:
 def material_text(part: Part) -> str:
     """Material sentence fragment."""
     m = part.mass
+    if m.material_source == "designer_mass":
+        return "density derived from the mass given by the designer"
     if m.material_assumed and m.material_source == "user":
         return f"material {m.material_assumed} (given)"
     if m.material_assumed and m.material_source == "step_file":

@@ -192,7 +192,7 @@ def test_the_note_appears_below_50_and_above_120_percent_of_the_solid_estimate(
     note = ratio_note(pct, 100.0)
     assert (note is not None) is expected
     if note:
-        assert note == f"the measured mass is {pct:.0f}% of the solid estimate{NOTE_TAIL}"
+        assert note == f"the measured mass is {pct:.1f}% of the solid estimate{NOTE_TAIL}"
     assert ratio_note(10.0, None) is None  # no estimate, nothing to compare with
 
 
@@ -204,7 +204,7 @@ def test_the_note_has_no_judgement_words() -> None:
 
 def test_the_note_sits_beside_the_part_in_every_output(plain, given) -> None:  # type: ignore[no-untyped-def]
     analysis, est = given  # twice the estimate: 200 %
-    note = "the measured mass is 200% of the solid estimate" + NOTE_TAIL
+    note = "the measured mass is 200.0% of the solid estimate" + NOTE_TAIL
     part = _part(analysis, PART)
     assert part.mass.designer_mass.ratio_note == note
     assert (
@@ -238,3 +238,130 @@ def test_a_given_mass_close_to_the_estimate_has_no_note(step_files, plain, tmp_p
     assert "ratio_note" not in json.dumps(
         json.loads(report_to_json(analysis.report))["parts"][0]["mass"]
     )
+
+
+# ---- review follow-up ------------------------------------------------------------------------------
+def test_the_note_never_reads_as_the_threshold() -> None:
+    low = ratio_note(49.96, 100.0)
+    high = ratio_note(120.04, 100.0)
+    assert low is not None and low.startswith("the measured mass is 49.9% ")
+    assert high is not None and high.startswith("the measured mass is 120.1% ")
+    assert ratio_note(50.0, 100.0) is None and ratio_note(120.0, 100.0) is None
+
+
+def test_a_density_derived_from_the_mass_has_its_own_source_and_is_said_in_the_pack(  # type: ignore[no-untyped-def]
+    step_files, tmp_path
+) -> None:
+    opts = AnalyzeOptions(no_timestamp=True)
+    ctx = tmp_path / "c.yaml"
+    ctx.write_text("parts:\n  plate_4xM3:\n    mass_g: 250.0\n", encoding="utf-8")
+    apply_context(opts, load_context(ctx))
+    report = analyze_full(step_files["plate_4xM3"], opts).report
+    part = report.parts[0]
+    assert part.mass.material_source == "designer_mass" and part.mass.density_g_cm3 is not None
+    assert part.mass.density_g_cm3 == pytest.approx(250.0 * 1000.0 / part.mass.volume_mm3)
+    text = md.mass_markdown(md.mass_distribution(report), None)
+    assert "density derived from the mass given" in text
+    from stepscribe.describe.part_describer import material_text
+
+    assert material_text(part) == "density derived from the mass given by the designer"
+    # a part whose density comes from a material keeps that source
+    with_material = _run(
+        step_files["plate_4xM3"], tmp_path, "parts:\n  plate_4xM3:\n    mass_g: 250.0\n"
+    )
+    assert with_material.report.parts[0].mass.material_source == "user"
+
+
+def test_a_shared_name_warns_only_when_the_volumes_differ(  # type: ignore[no-untyped-def]
+    step_files, tmp_path, monkeypatch
+) -> None:
+    from stepscribe import api
+
+    def warnings_for(shift: float) -> list[str]:
+        real = api._analyse_bodies
+
+        def twice(*args, **kwargs):  # type: ignore[no-untyped-def]
+            done = real(*args, **kwargs)
+            key, geom, part = done[0]
+            twin = part.model_copy(deep=True)
+            twin.mass.volume_mm3 *= 1.0 + shift
+            return [*done, (key, geom, twin)]
+
+        monkeypatch.setattr(api, "_analyse_bodies", twice)
+        ctx = tmp_path / f"c{shift}.yaml"
+        ctx.write_text("parts:\n  plate_4xM3:\n    mass_g: 100\n", encoding="utf-8")
+        opts = AnalyzeOptions(no_timestamp=True, material="steel")
+        apply_context(opts, load_context(ctx))
+        warnings = analyze_full(step_files["plate_4xM3"], opts).report.warnings
+        monkeypatch.setattr(api, "_analyse_bodies", real)
+        return [w for w in warnings if "differ" in w]
+
+    assert warnings_for(0.0) == []  # identical copies: no warning
+    assert warnings_for(0.005) == []  # within about 1%
+    found = warnings_for(0.05)
+    assert len(found) == 1 and "'plate_4xM3'" in found[0] and "2 parts" in found[0]
+
+
+def test_rebuilding_the_mass_names_every_field_of_the_model() -> None:
+    from stepscribe.geometry.designer_mass import FROM_NEW_MASS, KEPT_FROM_OLD_MASS
+    from stepscribe.models.schema import MassProperties
+
+    assert set(FROM_NEW_MASS) | set(KEPT_FROM_OLD_MASS) == set(MassProperties.model_fields), (
+        "a field was added to the mass model: say whether a rebuilt mass takes it from the new "
+        "computation (FROM_NEW_MASS) or keeps it from the earlier mass (KEPT_FROM_OLD_MASS)"
+    )
+    assert not set(FROM_NEW_MASS) & set(KEPT_FROM_OLD_MASS)
+
+
+def test_a_rebuilt_mass_keeps_what_belongs_to_the_old_one_and_takes_the_rest_from_the_new() -> None:
+    from stepscribe.geometry.designer_mass import FROM_NEW_MASS, KEPT_FROM_OLD_MASS, rebuild_mass
+    from stepscribe.models.schema import DesignerMass, MassProperties, Vec3
+
+    def mass(v: float, source: str) -> MassProperties:
+        return MassProperties(
+            volume_mm3=v,
+            surface_area_mm2=v + 1,
+            centroid=Vec3(x=v, y=0, z=0),
+            density_g_cm3=v / 10,
+            mass_g=v / 5,
+            material_assumed=source,
+            material_source="user",
+            inertia_tensor_g_mm2=[[v, 0, 0], [0, v, 0], [0, 0, v]],
+        )
+
+    old = mass(1.0, "old")
+    old.designer_mass = DesignerMass(given_g=5.0, used=False, note="kept")
+    new = mass(2.0, "new")
+    out = rebuild_mass(old, new)
+    for name in FROM_NEW_MASS:
+        assert getattr(out, name) == getattr(new, name), name
+    for name in KEPT_FROM_OLD_MASS:
+        assert getattr(out, name) == getattr(old, name) != getattr(new, name), name
+    assert new.designer_mass is None  # the new mass is not changed in place
+
+
+def test_the_schema_keeps_the_new_fields_optional(plain) -> None:  # type: ignore[no-untyped-def]
+    from stepscribe.models.schema import Report, json_schema
+
+    defs = json_schema()["$defs"]
+    required = set(defs["MassProperties"].get("required", []))
+    assert not required & {"designer_mass", "material_source"}
+    assert {"given_g", "used", "note"} <= set(defs["DesignerMass"]["required"])
+    assert "ratio_note" not in defs["DesignerMass"]["required"]
+    assert "designer_mass" in defs["MassProperties"]["properties"]
+    assert "designer_mass" in defs["MassProperties"]["properties"]["material_source"]["enum"]
+    # a report without any of the new fields validates, and one with them validates and round-trips
+    data = json.loads(report_to_json(plain.report))
+    assert "designer_mass" not in json.dumps(data)
+    Report.model_validate(data)
+    data["parts"][0]["mass"]["designer_mass"] = {
+        "given_g": 12.5,
+        "used": True,
+        "estimated_g": 10.0,
+        "note": LABEL,
+        "ratio_note": "the measured mass is 125.0% of the solid estimate; the part may be hollow, printed or made of a different material",
+    }
+    data["parts"][0]["mass"]["material_source"] = "designer_mass"
+    again = Report.model_validate(data)
+    assert again.parts[0].mass.designer_mass.given_g == 12.5  # type: ignore[union-attr]
+    assert json.loads(report_to_json(again))["parts"][0]["mass"]["designer_mass"]["used"] is True
