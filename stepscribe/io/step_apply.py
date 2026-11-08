@@ -22,6 +22,8 @@ from OCP.TopExp import TopExp_Explorer
 from OCP.TopoDS import TopoDS, TopoDS_Face, TopoDS_Shape
 
 from stepscribe.analysis import AnalyzeOptions
+from stepscribe.config import material_keyword
+from stepscribe.geometry import density_range as dr
 from stepscribe.geometry.occ_utils import to_np
 from stepscribe.geometry.part_geom import PartGeom
 from stepscribe.geometry.properties import guess_density, mass_properties
@@ -95,6 +97,8 @@ def use_material(part: Part, geom: PartGeom, mat: StepMaterial, opts: AnalyzeOpt
         given  # a refused part keeps the note that its given mass was not used
     )
     mat.density_used = True
+    if mat.density_g_cm3 is None and not dr.has_grade(mat.name):  # only the keyword table's value
+        dr.set_range(part.mass, material_keyword(mat.name), dr.FAMILY_REASON)
 
 
 # ------------------------------------------------------------------ PMI

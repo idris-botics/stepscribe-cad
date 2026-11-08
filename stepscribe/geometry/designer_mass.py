@@ -83,5 +83,6 @@ def apply_designer_mass(part: Part, shape: TopoDS_Shape, given_g: float) -> None
         inertia = [[v * scale for v in row] for row in unit.inertia_tensor_g_mm2]
         m.density_g_cm3 = given_g * 1000.0 / m.volume_mm3
     m.mass_g = given_g
+    m.density_range = None  # a measured mass has no range
     m.inertia_tensor_g_mm2 = inertia
     m.designer_mass = DesignerMass(given_g=given_g, used=True, estimated_g=estimated, note=LABEL)

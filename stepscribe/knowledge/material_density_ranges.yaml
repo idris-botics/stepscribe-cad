@@ -1,0 +1,16 @@
+# Typical density range of a material FAMILY, in g/cm3, used only where the density is an assumption:
+# a density guessed from a part name, or a material the designer named without a grade ("steel", "aluminium").
+# A grade, a density the designer states, one read from the STEP file or a measured mass has no range.
+# Rule 8: every entry has a `source`; here it names the general reference class, not a product or supplier.
+# The point value used everywhere else stays the one in stepscribe/config.py (MATERIAL_KEYWORDS); each
+# range contains it. A family with no entry (pa12: one specific polymer) never gets a range.
+kind: material_density_range
+entries:
+  alu:   {min_g_cm3: 2.65, max_g_cm3: 2.85, source: "general reference class: wrought and cast aluminium alloys"}
+  steel: {min_g_cm3: 7.75, max_g_cm3: 8.05, source: "general reference class: carbon, alloy and stainless steels"}
+  brass: {min_g_cm3: 8.40, max_g_cm3: 8.75, source: "general reference class: copper-zinc alloys"}
+  petg:  {min_g_cm3: 1.23, max_g_cm3: 1.30, source: "general reference class: unfilled PETG filaments"}
+  pla:   {min_g_cm3: 1.20, max_g_cm3: 1.30, source: "general reference class: PLA filaments, with and without additives"}
+  abs:   {min_g_cm3: 1.03, max_g_cm3: 1.10, source: "general reference class: ABS filaments and mouldings"}
+  nylon: {min_g_cm3: 1.01, max_g_cm3: 1.15, source: "general reference class: unfilled polyamides (long-chain to short-chain types)"}
+  cf:    {min_g_cm3: 1.30, max_g_cm3: 1.80, source: "general reference class: carbon-fibre reinforced polymers, by fibre content"}

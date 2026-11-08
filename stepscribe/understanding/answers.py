@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from stepscribe import config
+from stepscribe.geometry import density_range as dr
 from stepscribe.models.schema import (
     Evidence,
     Hypothesis,
@@ -230,6 +231,8 @@ def apply_material(analysis: Any, material: str) -> None:
         m.mass_g = m.volume_mm3 * 1e-3 * density
         m.material_assumed = material
         m.material_source = "user"
+        m.density_range = None
+        dr.set_range(m, material, dr.FAMILY_REASON)
         _plastic_process(ap.part, material)
     asm = analysis.report.assembly
     if asm is None:
