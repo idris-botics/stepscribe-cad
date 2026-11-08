@@ -57,6 +57,10 @@ kinematics:
     robot_min_joints: 3            # an arm with fewer joints is asked the ordinary questions
     static_confidence: 0.6         # HEURISTIC CONSTANT, not derived from evidence: "Likely: a static structure" claims that
                                    # no joint was found, an absence there is nothing to average over
+  unjointed:
+    # rigid groups that no joint touches: when there are many, the joint count is not the degrees of freedom
+    many_share: 0.25               # at least this share of the rigid groups ...
+    many_min_groups: 3             # ... and at least this many groups
   name_groups:
     min_numbered_groups: 3         # BASE does not count; LINK1..LINK3 or more
     confidence: 0.8

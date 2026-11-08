@@ -44,6 +44,11 @@ from stepscribe.understanding.kinematics import (
 )
 from stepscribe.understanding.ml_roles import RoleModel, load_role_models, role_scores
 from stepscribe.understanding.process import is_complex_guess
+from stepscribe.understanding.unjointed import (
+    many_unjointed,
+    unjointed_share,
+    unjointed_text,
+)
 
 if TYPE_CHECKING:
     from stepscribe.api import Analysis
@@ -705,6 +710,9 @@ def design_summary(
     else:
         head = f"a mechanism with {len(model.joints)} joints ({topo.replace('_', ' ')})"
     support = _support(model, _headline_joints(model, topo, wheels, arm_joints, movers))
+    if many_unjointed(model):  # never state the degrees of freedom as fact
+        movers_txt = ", ".join(_joint_phrases(model, movers)) if 0 < len(movers) <= 4 else ""
+        head = unjointed_text(model) + (f" ({movers_txt})" if movers_txt else "")
     sentences = [f"Likely: {head} ({support})"]
     headline = _apply_headline(model, ctx, arm_joints if topo == "serial_chain" else [])
     listed = arm_joints or (movers if len(movers) <= 4 else [])
@@ -798,6 +806,8 @@ def _support(model: KinematicModel, joints: list[KinJoint]) -> str:
     mean = sum(j.confidence for j in joints) / len(joints)
     cap = min(j.confidence for j in joints) + float(cfg["weakest_joint_headroom"])
     conf = max(float(cfg["min_confidence"]), min(float(cfg["max_confidence"]), mean, cap))
+    if many_unjointed(model):  # the share of groups with no joint evidence caps what can be claimed
+        conf = min(conf, round(1.0 - unjointed_share(model), 2))
     return f"confidence {conf:.2f}; evidence {id_range([j.id for j in joints])}, {links}"
 
 
@@ -833,6 +843,8 @@ def _apply_headline(
     if hl is None:
         return None
     model.headline, model.headline_confidence = hl.text, hl.confidence
+    if hl.confidence is not None and many_unjointed(model):
+        model.headline_confidence = min(hl.confidence, round(1.0 - unjointed_share(model), 2))
     model.headline_evidence, model.statement = hl.evidence, hl.statement
     model.axis_pattern = hl.axis_pattern
     if hl.is_arm:  # the statement already says everything the plain description said
