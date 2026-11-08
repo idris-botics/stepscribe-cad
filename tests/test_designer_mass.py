@@ -10,7 +10,7 @@ import pytest
 
 from stepscribe.analysis import AnalyzeOptions
 from stepscribe.api import analyze_full
-from stepscribe.geometry.designer_mass import LABEL, refusal
+from stepscribe.geometry.designer_mass import LABEL, ratio_note, refusal
 from stepscribe.io.report_writer import report_to_json
 from stepscribe.pack.design_context import apply_context, load_context
 from stepscribe.pack.robot import build_robot
@@ -169,3 +169,72 @@ def test_without_mass_g_the_report_is_the_same_as_before(step_files, tmp_path) -
         analyze_full(path, AnalyzeOptions(no_timestamp=True, material="steel")).report
     )
     assert "mass_label" not in json.dumps(robot) and LABEL_TEXT not in build_urdf(robot)
+
+
+NOTE_TAIL = "; the part may be hollow, printed or made of a different material"
+
+
+@pytest.mark.parametrize(
+    "pct, expected",
+    [
+        (49.9, True),
+        (50.0, False),
+        (75.0, False),
+        (100.0, False),
+        (120.0, False),
+        (120.1, True),
+        (200.0, True),
+    ],
+)
+def test_the_note_appears_below_50_and_above_120_percent_of_the_solid_estimate(
+    pct: float, expected: bool
+) -> None:
+    note = ratio_note(pct, 100.0)
+    assert (note is not None) is expected
+    if note:
+        assert note == f"the measured mass is {pct:.0f}% of the solid estimate{NOTE_TAIL}"
+    assert ratio_note(10.0, None) is None  # no estimate, nothing to compare with
+
+
+def test_the_note_has_no_judgement_words() -> None:
+    low = (ratio_note(10.0, 100.0) or "").lower()
+    for word in ("wrong", "error", "bad", "suspicious", "too ", "should", "mistake", "unrealistic"):
+        assert word not in low
+
+
+def test_the_note_sits_beside_the_part_in_every_output(plain, given) -> None:  # type: ignore[no-untyped-def]
+    analysis, est = given  # twice the estimate: 200 %
+    note = "the measured mass is 200% of the solid estimate" + NOTE_TAIL
+    part = _part(analysis, PART)
+    assert part.mass.designer_mass.ratio_note == note
+    assert (
+        json.loads(report_to_json(analysis.report))["parts"][analysis.report.parts.index(part)][
+            "mass"
+        ]["designer_mass"]["ratio_note"]
+        == note
+    )
+    dist = md.mass_distribution(analysis.report)
+    entry = next(p for p in dist["parts"] if p["id"] == part.id)
+    assert entry["mass_ratio_note"] == note
+    text = md.mass_markdown(dist, None)
+    assert f"  - {note}" in text
+    from stepscribe.describe.part_describer import mass_text
+
+    assert note in mass_text(part)
+    # a part with a given mass near its estimate, or none, carries no note
+    other = next(p for p in analysis.report.parts if p.name != PART)
+    assert other.mass.designer_mass is None and "ratio_note" not in json.dumps(
+        report_to_json(plain.report)
+    )
+
+
+def test_a_given_mass_close_to_the_estimate_has_no_note(step_files, plain, tmp_path) -> None:  # type: ignore[no-untyped-def]
+    est = next(p.mass.mass_g for p in plain.report.parts if p.name == PART)
+    analysis = _run(
+        step_files["arm_6_axis"], tmp_path, f"parts:\n  {PART}:\n    mass_g: {0.8 * est!r}\n"
+    )
+    dm = _part(analysis, PART).mass.designer_mass
+    assert dm is not None and dm.used and dm.ratio_note is None
+    assert "ratio_note" not in json.dumps(
+        json.loads(report_to_json(analysis.report))["parts"][0]["mass"]
+    )

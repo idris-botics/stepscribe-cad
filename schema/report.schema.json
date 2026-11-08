@@ -970,6 +970,18 @@
         "note": {
           "title": "Note",
           "type": "string"
+        },
+        "ratio_note": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ratio Note"
         }
       },
       "required": [

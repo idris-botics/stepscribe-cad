@@ -103,7 +103,8 @@ def mass_text(part: Part) -> str:
     """Mass fragment."""
     dm = part.mass.designer_mass
     if dm is not None and dm.used and part.mass.mass_g is not None:
-        return f"{fmt(part.mass.mass_g, 1)} g (mass from designer)"
+        extra = f"; {dm.ratio_note}" if dm.ratio_note else ""
+        return f"{fmt(part.mass.mass_g, 1)} g (mass from designer{extra})"
     note = f"; {dm.note}" if dm is not None else ""
     if part.mass.mass_g is not None:
         return f"{fmt(part.mass.mass_g, 1)} g ({material_text(part)}{note})"
