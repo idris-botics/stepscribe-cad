@@ -86,6 +86,18 @@ def _has_word(text: str, word: str) -> bool:
     return re.search(r"(?<![a-z0-9])" + re.escape(word) + end, text) is not None
 
 
+def servo_pocket(part: Part, c: dict) -> tuple[str, str, float, float] | None:  # type: ignore[type-arg]
+    """(label, cut-out ID, width, length) of the first opening whose size fits a hobby servo body."""
+    for cut in part.cutouts:
+        for level in cut.levels[:1]:
+            w, length = sorted((level.width_mm, level.length_mm))
+            for size in c["servo_pocket"]["sizes"]:
+                (w0, w1), (l0, l1) = size["width_mm"], size["length_mm"]
+                if w0 <= w <= w1 and l0 <= length <= l1:
+                    return str(size["label"]), cut.id, w, length
+    return None
+
+
 def name_hits(names: list[str], keywords: dict[str, list[str]]) -> dict[str, str]:
     text = " ".join(names)
     text = re.sub(r"([a-z])([A-Z])", r"\1 \2", text).lower()
@@ -99,6 +111,16 @@ def name_hits(names: list[str], keywords: dict[str, list[str]]) -> dict[str, str
             if _has_word(text, word) or _has_word(text_split, word):
                 hits[role] = w
                 break
+    return hits
+
+
+def name_role_hits(names: list[str], c: dict) -> dict[str, str]:  # type: ignore[type-arg]
+    """Roles a name suggests. A holder word (holder, mount, bracket, plate, cover, case, housing, adapter)
+    means the part holds something: the roles in ``holder_blocks`` (motor) can never come from its name."""
+    hits = name_hits(names, c["name_keywords"])
+    if name_hits(names, {"holder": c["holder_words"]}):
+        for role in c["holder_blocks"]:
+            hits.pop(role, None)
     return hits
 
 
@@ -148,13 +170,34 @@ def part_score(part: Part, scorer: Scorer, c: dict) -> None:  # type: ignore[typ
             if any(w in g for w in FASTENER_WORDS)
             else None
         )
-        if kind in c["hardware"]:
+        if kind in c["hardware"] and "in the name" in part.hardware_guess:
+            # recognised from the name alone: the same low, labelled evidence as any other name hit
+            blocked = kind in c["holder_blocks"] and name_hits(
+                [part.name], {"holder": c["holder_words"]}
+            )
+            if not blocked:
+                scorer.add(
+                    {role: c["name_weight"] for role in c["hardware"][kind]},
+                    f"name:hardware:{kind}",
+                    [part.id],
+                    f"from the name: recognised as {part.hardware_guess}",
+                )
+        elif kind in c["hardware"]:
             scorer.add(
                 c["hardware"][kind],
                 f"hardware:{kind}",
                 [part.id],
                 f"recognised as {part.hardware_guess}",
             )
+    pocket = servo_pocket(part, c)
+    if pocket is not None:
+        label, cut_id, w, length = pocket
+        scorer.add(
+            {"servo_mount": float(c["servo_pocket"]["weight"])},
+            "geometry:servo_pocket",
+            [part.id, cut_id],
+            f"servo mount (likely): an opening of {w:.1f} x {length:.1f} mm matches a {label} body",
+        )
     u = part.understanding
     if u is not None:
         cut = [f for f in u.structural_features if f.kind == "lightening_cutout"]
@@ -367,12 +410,12 @@ def score_instances(
     _position_evidence(ctx, scorers, c, asm.up_axis)
     names = {i.id: [i.name, i.ap.part.name] for i in ctx.insts}
     for iid, nm in names.items():
-        for role, word in name_hits(nm, c["name_keywords"]).items():
+        for role, word in name_role_hits(nm, c).items():
             scorers[iid].add(
                 {role: c["name_weight"]},
                 f"name:{word}",
                 [iid],
-                f"the name '{nm[0]}' contains '{word}'",
+                f"from the name: '{nm[0]}' contains '{word}'",
             )
     return scorers
 
@@ -500,12 +543,12 @@ def assign_single_part_roles(analysis: Analysis) -> None:
             continue
         s = Scorer()
         part_score(ap.part, s, c)
-        for role, word in name_hits([ap.part.name], c["name_keywords"]).items():
+        for role, word in name_role_hits([ap.part.name], c).items():
             s.add(
                 {role: c["name_weight"]},
                 f"name:{word}",
                 [ap.part.id],
-                f"the name '{ap.part.name}' contains '{word}'",
+                f"from the name: '{ap.part.name}' contains '{word}'",
             )
         ap.part.understanding.roles = _top(s, c)
 

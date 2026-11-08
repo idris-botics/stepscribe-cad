@@ -82,6 +82,7 @@ def named_parts(out: Path) -> Path:
         "servo bracket pocket": servo_holder(True),
         "mg90 connector hole": Box(20, 10, 3),
         "axe": threaded_axe(),
+        "frame plate": Box(60, 60, 4) - Box(30, 30, 6),
     }
     root = Node(
         "NamedParts",
@@ -90,6 +91,7 @@ def named_parts(out: Path) -> Path:
             Node("Pocket", "servo bracket pocket", Pos(60, 0, 0)),
             Node("Connector", "mg90 connector hole", Pos(0, 60, 0)),
             Node("Axe", "axe", Pos(60, 60, 0)),
+            Node("Frame", "frame plate", Pos(-60, 0, 0)),
         ],
     )
     return write_assembly(out / "named_parts.step", protos, root)
