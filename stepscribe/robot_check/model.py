@@ -18,6 +18,7 @@ import numpy as np
 from stepscribe.text_safety import clean_name
 
 MAX_BYTES = 20_000_000  # a URDF larger than this is not a draft of ours
+MAX_LINKS = 5000  # more links or joints than this is not a robot description we read
 JOINT_TYPES = ("revolute", "continuous", "prismatic", "fixed", "floating", "planar")
 MOVING = ("revolute", "continuous", "prismatic")
 
@@ -130,6 +131,8 @@ def parse_urdf(text: str) -> Urdf:
         raise UrdfError(f"not well-formed XML ({exc})") from exc
     if root.tag != "robot":
         raise UrdfError(f"the root element is <{clean_name(root.tag)}>, not <robot>")
+    if len(root.findall("link")) > MAX_LINKS or len(root.findall("joint")) > MAX_LINKS:
+        raise UrdfError(f"more than {MAX_LINKS} links or joints")
     links: list[Link] = []
     seen_links: set[str] = set()
     dup_links: list[str] = []
