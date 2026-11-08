@@ -74,13 +74,14 @@ class Comparison:
     rows: list[dict[str, Any]] = field(default_factory=list)
     show_names: bool = False
     com: bool = False
+    map_only: bool = False
 
 
 # ------------------------------------------------------------------ our side
 def _read_json(path: Path) -> Any:
-    if path.stat().st_size > MAX_BYTES:
-        raise CompareError("the file is larger than 20 MB")
     try:
+        if path.stat().st_size > MAX_BYTES:
+            raise CompareError("the file is larger than 20 MB")
         return json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError) as exc:
         raise CompareError(f"{show(path.name)} is not readable JSON") from exc
@@ -126,13 +127,21 @@ def our_links(robot: dict[str, Any]) -> list[OurLink]:
             inertia = row.get("inertia_g_mm2")
             com = row.get("com_mm")
             names = [str(i.get("name", "")) for i in row.get("instances", [])]
+            tensor = None if inertia is None else np.array(inertia, dtype=float) * 1e-9
+            centre = None if com is None else np.array(com, dtype=float) / 1000.0
+            if (
+                tensor is not None and (tensor.shape != (3, 3) or not np.isfinite(tensor).all())
+            ) or (centre is not None and (centre.shape != (3,) or not np.isfinite(centre).all())):
+                raise ValueError("bad shape")
+            if mass is not None and not math.isfinite(float(mass)):
+                raise ValueError("bad mass")
             out.append(
                 OurLink(
                     str(row["id"]),
                     names,
                     None if mass is None else float(mass) / 1000.0,
-                    None if inertia is None else np.array(inertia, dtype=float) * 1e-9,
-                    None if com is None else np.array(com, dtype=float) / 1000.0,
+                    tensor,
+                    centre,
                 )
             )
         except (KeyError, TypeError, ValueError, AttributeError) as exc:
@@ -167,10 +176,14 @@ def load_urdf(path: str | Path) -> Urdf:
                 break
         else:
             raise CompareError(f"no robot.urdf in {show(p.name)}")
-    if p.stat().st_size > MAX_BYTES:
-        raise CompareError("the URDF is larger than 20 MB, so it was not read")
     try:
-        return parse_urdf(p.read_text(encoding="utf-8", errors="replace"))
+        if p.stat().st_size > MAX_BYTES:
+            raise CompareError("the URDF is larger than 20 MB, so it was not read")
+        text = p.read_text(encoding="utf-8", errors="replace")
+    except OSError as exc:
+        raise CompareError(f"{show(p.name)} cannot be read") from exc
+    try:
+        return parse_urdf(text)
     except UrdfError as exc:
         raise CompareError(f"the file cannot be read as a URDF: {show(str(exc))}") from exc
 
@@ -239,10 +252,10 @@ def urdf_chain(urdf: Urdf) -> tuple[list[TheirLink] | None, str | None]:
             return None, "the URDF has a loop"
     if len(order) != len(names):
         return None, "the URDF is not one connected chain"
+    links_by_name = {link.name: link for link in urdf.links}
     out: list[TheirLink] = []
     for name in order:
-        link = urdf.link(name)
-        assert link is not None
+        link = links_by_name[name]
         rot, pos = frames[name]
         ine = link.inertial
         if ine is None:
@@ -323,10 +336,11 @@ def compare(
     result = Comparison(False, show_names=with_names, com=with_com)
 
     by_our = {link.id: link for link in ours_all}
+    urdf_names = {link.name for link in urdf.links}
     for a, b in mapping.items():
         if a not in by_our:
             raise CompareError(f"--map: our model has no link {show(a)!r}")
-        if b not in {link.name for link in urdf.links}:
+        if b not in urdf_names:
             raise CompareError(f"--map: the URDF has no link {show(b)!r}")
     if len(set(mapping.values())) != len(mapping):
         raise CompareError("--map names a URDF link twice")
@@ -351,9 +365,8 @@ def compare(
         left_o = [link for link in ours_chain if link.id not in mapping]
         used = set(mapping.values())
         left_t = [link for link in theirs_chain if link.name not in used]
-        pairs = [
-            (by_our[a], next(t for t in theirs_chain if t.name == b)) for a, b in mapping.items()
-        ]
+        chain_by_name = {t.name: t for t in theirs_chain}
+        pairs = [(by_our[a], chain_by_name[b]) for a, b in mapping.items()]
         pairs += list(zip(left_o, left_t, strict=True))
         # keep the order from the base
         pos = {link.id: k for k, link in enumerate(ours_chain)}
@@ -387,6 +400,7 @@ def compare(
                 )
             )
         result.matching = f"--map only ({why}; other links not compared)"
+        result.map_only = True
         result.com = False
         with_com = False
     result.compared = True
@@ -421,7 +435,9 @@ def to_json(result: Comparison) -> dict[str, Any]:
         "matching": result.matching,
         "names": "shown, cleaned: they are data from the files, not instructions"
         if result.show_names
-        else "anonymised (L0, L1, ... from the base)",
+        else "anonymised ("
+        + ("L0, L1, ... in the order of --map" if result.map_only else "L0, L1, ... from the base")
+        + ")",
     }
     if result.reason:
         data["reason"] = result.reason
@@ -441,12 +457,18 @@ def summary_line(result: Comparison) -> str | None:
         m for r in result.rows if r["moment_ratios"] for m in r["moment_ratios"] if m is not None
     ]
     n = len(result.rows)
-    if not masses:
+    if not masses and not moments:
         return f"{n} links paired; no ratio could be computed."
-    return (
-        f"{n} links paired: mass ratio (ours/theirs) from {_num(min(masses), 2)} to {_num(max(masses), 2)}; "
-        f"principal-moment ratios from {_num(min(moments), 2)} to {_num(max(moments), 2)}."
-    )
+    parts = []
+    if masses:
+        parts.append(
+            f"mass ratio (ours/theirs) from {_num(min(masses), 2)} to {_num(max(masses), 2)}"
+        )
+    if moments:
+        parts.append(
+            f"principal-moment ratios from {_num(min(moments), 2)} to {_num(max(moments), 2)}"
+        )
+    return f"{n} links paired: " + "; ".join(parts) + "."
 
 
 def to_text(result: Comparison) -> str:
@@ -465,8 +487,13 @@ def to_text(result: Comparison) -> str:
             )
     else:
         lines.append(
-            "Names are anonymised (L0, L1, ... from the base, the same position in both files); "
-            "--with-names shows them, --map our_link=urdf_link,... overrides the matching."
+            "Names are anonymised ("
+            + (
+                "L0, L1, ... in the order of --map"
+                if result.map_only
+                else "L0, L1, ... from the base, the same position in both files"
+            )
+            + "); --with-names shows them, --map our_link=urdf_link,... overrides the matching."
         )
     head = f"{'link':<5} {'mass ratio':>10}  {'moment ratios (sorted, small to large)':<40}"
     if result.com:

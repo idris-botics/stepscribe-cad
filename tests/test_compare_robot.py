@@ -307,3 +307,52 @@ def test_the_reader_is_the_one_validate_robot_uses() -> None:
     from stepscribe.robot_check import model
 
     assert cmp.parse_urdf is model.parse_urdf and cmp.MAX_BYTES == model.MAX_BYTES
+
+
+# ---- review fixes --------------------------------------------------------------------------------
+def test_a_placeholder_zero_inertia_does_not_crash_the_summary(tmp_path: Path, robot) -> None:  # type: ignore[no-untyped-def]
+    for args in ((), ("--json",)):
+        result = run(tmp_path, robot, make_urdf(robot, inertia=0.0), *args)
+        assert result.exit_code == 0 and "Traceback" not in result.output
+    data = json.loads(run(tmp_path, robot, make_urdf(robot, inertia=0.0), "--json").output)
+    assert data["links"][0]["mass_ratio"] == pytest.approx(1.0, abs=1e-5)
+    assert data["links"][0]["moment_ratios"] == [None, None, None]
+    assert "mass ratio" in data["summary"] and "principal-moment" not in data["summary"]
+
+
+def test_a_malformed_robot_json_is_refused_plainly(tmp_path: Path, robot) -> None:  # type: ignore[no-untyped-def]
+    for field, value in (
+        ("inertia_g_mm2", [1, 2, 3, 4, 5, 6]),
+        ("inertia_g_mm2", [[1, 2], [3, 4]]),
+        ("com_mm", [1, 2]),
+        ("mass_g", float("nan")),
+    ):
+        broken = json.loads(json.dumps(robot))
+        broken["links"][0][field] = value
+        result = run(tmp_path, broken, make_urdf(robot), "--json")
+        assert result.exit_code == 1 and "cannot be read" in result.output, field
+        assert "Traceback" not in result.output
+
+
+def test_the_map_only_labels_say_they_follow_the_map(tmp_path: Path, robot) -> None:  # type: ignore[no-untyped-def]
+    text = make_urdf(robot).replace(
+        "</robot>",
+        '  <joint name="extra" type="fixed"><parent link="link_1"/><child link="link_3"/></joint></robot>',
+    )
+    ids = [robot["base_link"]] + [j["child"] for j in robot["joints"]]
+    out = run(tmp_path, robot, text, "--map", f"{ids[2]}=link_2").output
+    assert (
+        "in the order of --map" in out
+        and "from the base" not in out.split("Names")[-1].split(";")[0]
+    )
+    data = json.loads(run(tmp_path, robot, text, "--json", "--map", f"{ids[2]}=link_2").output)
+    assert "in the order of --map" in data["names"] and len(data["links"]) == 1
+
+
+def test_a_missing_urdf_folder_or_unreadable_path_is_invalid_input(tmp_path: Path, robot) -> None:  # type: ignore[no-untyped-def]
+    rj = tmp_path / "robot.json"
+    rj.write_text(json.dumps(robot), encoding="utf-8")
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    result = runner.invoke(app, ["compare-robot", str(rj), str(empty)])
+    assert result.exit_code == 1 and "no robot.urdf" in result.output
