@@ -33,10 +33,24 @@ def has_grade(material_text: str | None) -> bool:
     return bool(material_text and re.search(r"\d", material_text))
 
 
+def family_note(keyword: str | None) -> str | None:
+    """The family's own note (printed plastics: infill; cf: laminate and filament), or None."""
+    if keyword is None:
+        return None
+    row = load_table("material_density_ranges.yaml")["entries"].get(keyword)
+    return None if row is None else row.get("note")
+
+
 def set_range(mass: MassProperties, keyword: str | None, reason: str) -> None:
-    """Attach the family's range to a mass whose density is the family's point value; else clear it."""
+    """Attach the family's range to a mass whose density is the family's point value; else clear it.
+
+    The reason is the fixed one for the cause plus the family's note, when it has one.
+    """
     r = family_range(keyword)
     ok = r is not None and mass.density_g_cm3 is not None and r[0] <= mass.density_g_cm3 <= r[1]
+    note = family_note(keyword)
     mass.density_range = (
-        DensityRange(min_g_cm3=r[0], max_g_cm3=r[1], reason=reason) if ok and r else None
+        DensityRange(min_g_cm3=r[0], max_g_cm3=r[1], reason=f"{reason}; {note}" if note else reason)
+        if ok and r
+        else None
     )

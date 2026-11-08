@@ -215,6 +215,7 @@ def build_robot(report: Report, payload: Payload | None = None) -> dict[str, Any
                 "min": spread["mass_g"][0],
                 "max": spread["mass_g"][1],
                 "reason": spread["reason"],
+                **({"label": spread["label"]} if spread.get("approximate") else {}),
             }
             row["principal_inertia"]["range"] = spread
         given = link_designer_parts(report, g.instance_ids)

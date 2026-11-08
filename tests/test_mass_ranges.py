@@ -248,3 +248,88 @@ def test_the_new_text_names_no_part(steel) -> None:  # type: ignore[no-untyped-d
     for j in data["static_holding_loads"]["joints"]:
         assert not any(n in j["value_range"]["reason"] for n in names)
     assert not any(n in dr.NAME_REASON + dr.FAMILY_REASON for n in names)
+
+
+# ---- notes by family, the approximate label, the table comments, the grade rule ------------------
+PRINTED = "solid value; a printed part with infill is lighter"
+CF = "the range covers both a carbon laminate and carbon-filled filament"
+
+
+@pytest.mark.parametrize(
+    "name, note",
+    [
+        ("pla_cover", PRINTED),
+        ("petg_clip", PRINTED),
+        ("abs_lid", PRINTED),
+        ("nylon_gear", PRINTED),
+        ("cf_plate", CF),
+    ],
+)
+def test_printed_plastics_and_cf_carry_their_note_in_the_range_text_and_the_pack(
+    tmp_path: Path, name: str, note: str
+) -> None:
+    report = analyze_full(_named_step(tmp_path, name), AnalyzeOptions(no_timestamp=True)).report
+    r = report.parts[0].mass.density_range
+    assert (
+        r is not None and r.reason == f"density guessed from the name; range for the family; {note}"
+    )
+    text = md.mass_markdown(md.mass_distribution(report), None)
+    assert f"low to high ({r.reason}): mass" in text and note in text
+
+
+def test_metals_have_no_extra_note_and_family_level_plastics_do(step_files) -> None:  # type: ignore[no-untyped-def]
+    steel_reason = _arm(step_files, material="steel").report.parts[0].mass.density_range.reason  # type: ignore[union-attr]
+    assert steel_reason == "material known only at family level; range for the family"
+    pla = _arm(step_files, material="pla").report.parts[0].mass.density_range
+    assert pla is not None and pla.reason.endswith(PRINTED)
+
+
+def test_the_corner_search_fallback_is_labelled_approximate(steel, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    exact = build_robot(steel.report)
+    assert exact is not None
+    assert all("label" not in link["mass_range"] for link in exact["links"])
+    assert "approximate" not in md.mass_markdown(md.mass_distribution(steel.report), exact)
+    monkeypatch.setattr(mr, "MAX_CORNER_PARTS", 3)  # the arm has 7 parts with an uncertain density
+    approx = build_robot(steel.report)
+    assert approx is not None
+    multi = [
+        link
+        for link in approx["links"]
+        if len(link["principal_inertia"].get("range", {}).get("parts", [])) > 3
+    ]
+    assert multi == [] or all(link["mass_range"]["label"] == "approximate range" for link in multi)
+    dist = md.mass_distribution(steel.report)
+    assert dist["assembly"]["range"]["label"] == "approximate range"
+    assert "approximate range (" in md.mass_markdown(dist, approx)
+    assert not any(
+        "label" in j.get("value_range", {}) for j in approx["static_holding_loads"]["joints"]
+    )
+
+
+def test_every_range_has_its_reference_class_as_a_comment() -> None:
+    lines = (
+        (Path(config.__file__).parent / "knowledge" / "material_density_ranges.yaml")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    )
+    table = load_table("material_density_ranges.yaml")["entries"]
+    for key, row in table.items():
+        k = next(i for i, ln in enumerate(lines) if ln.startswith(f"  {key}:"))
+        assert lines[k - 1].strip() == "# " + row["source"].split("(")[0].strip() or lines[
+            k - 1
+        ].strip().startswith("# general reference class"), key
+
+
+def test_the_docs_say_any_digit_is_a_grade_and_the_fallback_is_approximate() -> None:
+    text = (Path(__file__).parent.parent / "docs" / "mass_distribution.md").read_text(
+        encoding="utf-8"
+    )
+    flat = " ".join(text.split())
+    assert "Any digit in a material text counts as a grade" in flat
+    assert (
+        "approximate range" in flat
+        and "exact extremes of the moments can then lie slightly outside it" in flat
+    )
+    assert (
+        dr.has_grade("aluminium 6061") and dr.has_grade("alu6061") and not dr.has_grade("aluminium")
+    )

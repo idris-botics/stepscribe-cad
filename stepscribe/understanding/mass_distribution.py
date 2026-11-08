@@ -264,7 +264,7 @@ def _principal_lines(label: str, d: dict[str, Any]) -> list[str]:
     if d.get("range") and d["status"] == "computed":
         r = d["range"]
         lines.append(
-            f"  - low to high ({r['reason']}): mass {_span(r['mass_g'])} g; principal moments "
+            f"  - {r.get('label', 'low to high')} ({r['reason']}): mass {_span(r['mass_g'])} g; principal moments "
             + ", ".join(_span(m, 1) for m in r["moments_g_mm2"])
             + " g*mm^2; radii of gyration "
             + ", ".join(_span(k, 2) for k in r["radii_of_gyration_mm"])

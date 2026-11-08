@@ -35,6 +35,7 @@ from stepscribe.understanding.rigid_body import (
 )
 
 MAX_CORNER_PARTS = 10
+APPROXIMATE_LABEL = "approximate range"
 
 
 def factors(part: Part) -> tuple[float, float] | None:
@@ -102,6 +103,7 @@ def body_range(report: Report, instance_ids: list[str]) -> dict[str, Any] | None
         moments.append(pr.moments_g_mm2)
         radii.append(pr.radii_mm)
     reasons = sorted({p.mass.density_range.reason for p in uncertain if p.mass.density_range})
+    approximate = len(uncertain) > MAX_CORNER_PARTS
     return {
         "mass_g": [min(masses), max(masses)],
         "moments_g_mm2": [
@@ -110,8 +112,9 @@ def body_range(report: Report, instance_ids: list[str]) -> dict[str, Any] | None
         "radii_of_gyration_mm": [
             [float(a), float(b)] for a, b in zip(_lo(radii), _hi(radii), strict=True)
         ],
-        "reason": "; ".join(reasons),
+        "reason": " | ".join(reasons),
         "parts": [p.id for p in uncertain],
+        **({"approximate": True, "label": APPROXIMATE_LABEL} if approximate else {}),
     }
 
 
@@ -179,6 +182,6 @@ def joint_ranges(
             "min": lo_sum + 0.0,
             "max": hi_sum + 0.0,
             "reason": "interval over the parts with an uncertain density, each term at its own low or "
-            "high mass (a term may have either sign): " + "; ".join(sorted(reasons)),
+            "high mass (a term may have either sign): " + " | ".join(sorted(reasons)),
         }
     return out
