@@ -15,12 +15,37 @@ from typing import Any
 
 from OCP.TopoDS import TopoDS_Shape
 
-from stepscribe.models.schema import DesignerMass, Part
+from stepscribe.models.schema import DesignerMass, MassProperties, Part
 
 LABEL = "mass from designer; inertia assumes the same distribution as the estimate"
+DENSITY_DERIVED = (
+    "density derived from the mass given (a uniform density over the volume); no material was set"
+)
 KEY = "mass_g"
 LOW_PCT = 50.0  # a given mass below this share of the solid estimate gets a note
 HIGH_PCT = 120.0  # or above this one
+
+
+# Every field of the mass model is either computed again from the file's material or kept from the earlier
+# mass. tests/test_designer_mass.py checks that the two lists together name every field, so a field added to
+# the model cannot be dropped silently when the mass is rebuilt.
+FROM_NEW_MASS = (
+    "volume_mm3",
+    "surface_area_mm2",
+    "centroid",
+    "density_g_cm3",
+    "mass_g",
+    "material_assumed",
+    "material_source",
+    "inertia_tensor_g_mm2",
+    "density_range",  # set again for the new material by set_range
+)
+KEPT_FROM_OLD_MASS = ("designer_mass",)
+
+
+def rebuild_mass(old: MassProperties, new: MassProperties) -> MassProperties:
+    """*new* (computed from a different material) with the fields that belong to the earlier mass kept."""
+    return new.model_copy(update={name: getattr(old, name) for name in KEPT_FROM_OLD_MASS})
 
 
 def parse_masses(ctx: dict[str, Any]) -> dict[str, float]:
@@ -49,8 +74,10 @@ def ratio_note(given_g: float, estimated_g: float | None) -> str | None:
     pct = given_g / estimated_g * 100.0
     if LOW_PCT <= pct <= HIGH_PCT:
         return None
+    # one decimal, rounded away from the threshold so 49.96% never reads as 50.0% (or 120.04% as 120.0%)
+    shown = math.floor(pct * 10) / 10 if pct < LOW_PCT else math.ceil(pct * 10) / 10
     return (
-        f"the measured mass is {pct:.0f}% of the solid estimate; "
+        f"the measured mass is {shown:.1f}% of the solid estimate; "
         "the part may be hollow, printed or made of a different material"
     )
 
@@ -97,6 +124,9 @@ def apply_designer_mass(part: Part, shape: TopoDS_Shape, given_g: float) -> None
         scale = given_g / unit.mass_g
         inertia = [[v * scale for v in row] for row in unit.inertia_tensor_g_mm2]
         m.density_g_cm3 = given_g * 1000.0 / m.volume_mm3
+        m.material_source = (
+            "designer_mass"  # the density is derived from the mass, it is not a material
+        )
     m.mass_g = given_g
     m.density_range = None  # a measured mass has no range
     m.inertia_tensor_g_mm2 = inertia

@@ -2262,7 +2262,8 @@
             "user",
             "step_file",
             "name_guess",
-            "none"
+            "none",
+            "designer_mass"
           ],
           "title": "Material Source",
           "type": "string"

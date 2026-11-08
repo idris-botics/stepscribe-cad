@@ -46,7 +46,9 @@ from OCP.TopoDS import TopoDS, TopoDS_Shape
 from stepscribe.geometry.properties import mass_properties
 from stepscribe.understanding.rigid_body import principal_inertia
 
-ANGULAR_DEFLECTION = 0.03  # rad, the largest angle one mesh chord subtends
+# rad, the largest angle one mesh chord subtends. REL_TOL is derived from this value (see the module text):
+# changing it requires recomputing the tolerance bound, and REL_TOL and docs/mass_distribution.md with it.
+ANGULAR_DEFLECTION = 0.03
 LINEAR_DEFLECTION_REL = 1e-4  # of the part's diagonal
 REL_TOL = 1e-3  # mass and each principal moment, relative (see the module text)
 COM_TOL = 1e-4  # centre of mass, as a share of the part's diagonal

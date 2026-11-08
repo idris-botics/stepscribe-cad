@@ -16,6 +16,7 @@ import numpy as np
 
 from stepscribe.describe.phrases import fmt
 from stepscribe.geometry.density_range import HOLLOW_SENTENCE
+from stepscribe.geometry.designer_mass import DENSITY_DERIVED
 from stepscribe.geometry.designer_mass import LABEL as DESIGNER_LABEL
 from stepscribe.models.schema import Instance, Part, Report
 from stepscribe.understanding.process import complex_geometry_reason
@@ -193,6 +194,8 @@ def _designer_fields(part: Part) -> dict[str, Any]:
         }
         if dm.ratio_note:
             out["mass_ratio_note"] = dm.ratio_note
+        if part.mass.material_source == "designer_mass":
+            out["density_note"] = DENSITY_DERIVED
         return out
     return {"designer_mass_not_used": dm.note}
 
@@ -270,6 +273,8 @@ def _principal_lines(label: str, d: dict[str, Any]) -> list[str]:
             + ", ".join(_span(k, 2) for k in r["radii_of_gyration_mm"])
             + " mm"
         )
+    if d.get("density_note"):
+        lines.append(f"  - {d['density_note']}")
     if d.get("mass_ratio_note"):
         lines.append(f"  - {d['mass_ratio_note']}")
     if d.get("mass_from_designer_parts"):

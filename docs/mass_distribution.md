@@ -39,9 +39,13 @@ The key is `mass_g`, under the part's name in `parts:` (like `material:` and `pr
   *mass from designer; inertia assumes the same distribution as the estimate*. `report.json` carries
   `mass.designer_mass` for such a part, and only for such a part.
 - When the mass you give is below 50 % or above 120 % of the solid estimate (from the material or density) one
-  neutral note is printed beside the part: "the measured mass is N% of the solid estimate; the part may be
+  neutral note is printed beside the part: "the measured mass is N.N% of the solid estimate; the part may be
   hollow, printed or made of a different material". It is in the pack section, the part text and `report.json`
   (`mass.designer_mass.ratio_note`). The given mass is used either way.
+- With no material set, the density is derived from your mass (a uniform density over the volume). Such a part has
+  `material_source: "designer_mass"` and the pack says the density is derived from the mass given.
+- A name that matches more than one part is a warning when the volumes of those parts differ by more than
+  about 1% (each of them gets the mass you gave); identical copies of one part do not warn.
 - A part that is **refused** (not a closed solid, a shell or surface, complex or free-form geometry) keeps
   its refusal. The mass you gave is not used, and the pack, `robot.json` and `report.json` say so and why.
 - A value that is not a number, is not above 0, or is not finite stops the run with a message that names
