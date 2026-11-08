@@ -38,12 +38,18 @@ def _face_samples(
 
 
 def sample_wall_thickness(
-    part: PartGeom, n_samples: int = config.WALL_SAMPLES
+    part: PartGeom,
+    n_samples: int = config.WALL_SAMPLES,
+    exclude: frozenset[str] | set[str] = frozenset(),
 ) -> tuple[float, float] | None:
     """(minimum, 5th percentile) of ray-cast distances through the material, or None."""
     table = part.table
     mesh = part.trimesh
-    cand = [i for i, f in enumerate(table.faces) if f.kind in ("plane", "cylinder") and f.area > 0]
+    cand = [
+        i
+        for i, f in enumerate(table.faces)
+        if f.kind in ("plane", "cylinder") and f.area > 0 and f.id not in exclude
+    ]  # `exclude`: thread and tooth faces
     if not cand or mesh is None:
         return None
     areas = np.array([table.faces[i].area for i in cand])

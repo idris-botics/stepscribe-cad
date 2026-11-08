@@ -104,6 +104,19 @@ class CounterboreFlat(_M):
     hole_wall_to_round_wall_mm: float  # the same hole's wall to the round counterbore wall opposite
 
 
+class ModelledThread(_M):
+    """A thread that is modelled in the CAD (coaxial bores that alternate between a minor and a major
+    diameter), found on a hole. Its flanks are not edges: they are left out of the edge distance."""
+
+    nominal: str | None = None  # "M2.5", from the major diameter
+    minor_mm: float
+    major_mm: float
+    n_faces: int  # coaxial cylinder faces that alternate
+    free_form_faces: int = 0  # flank faces between them (B-spline)
+    face_ids: list[str] = Field(default_factory=list)
+    evidence: str
+
+
 class Hole(_M):
     id: str
     axis: Axis
@@ -123,13 +136,15 @@ class Hole(_M):
     edge_distance_mm: float | None = None
     warnings: list[str] = Field(default_factory=list)
     counterbore_flat: CounterboreFlat | None = None
+    thread: ModelledThread | None = None  # absent unless the CAD models the thread
 
     @model_serializer(mode="wrap")
-    def _omit_absent_flat(self, handler: Any) -> dict[str, Any]:
-        """report.json carries ``counterbore_flat`` only for a counterbore that has a flat."""
+    def _omit_absent_optional(self, handler: Any) -> dict[str, Any]:
+        """report.json carries ``counterbore_flat`` and ``thread`` only where they apply."""
         data: dict[str, Any] = handler(self)
-        if data.get("counterbore_flat") is None:
-            data.pop("counterbore_flat", None)
+        for key in ("counterbore_flat", "thread"):
+            if data.get(key) is None:
+                data.pop(key, None)
         return data
 
 
@@ -260,6 +275,7 @@ class ShapeClass(Inference):
         "block",
         "housing",
         "gear_like",
+        "serrated",
         "sheet_metal",
         "fastener",
         "freeform",

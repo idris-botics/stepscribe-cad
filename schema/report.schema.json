@@ -1271,6 +1271,17 @@
             }
           ],
           "default": null
+        },
+        "thread": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ModelledThread"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         }
       },
       "required": [
@@ -2372,6 +2383,60 @@
       "title": "Meta",
       "type": "object"
     },
+    "ModelledThread": {
+      "additionalProperties": false,
+      "description": "A thread that is modelled in the CAD (coaxial bores that alternate between a minor and a major\ndiameter), found on a hole. Its flanks are not edges: they are left out of the edge distance.",
+      "properties": {
+        "nominal": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Nominal"
+        },
+        "minor_mm": {
+          "title": "Minor Mm",
+          "type": "number"
+        },
+        "major_mm": {
+          "title": "Major Mm",
+          "type": "number"
+        },
+        "n_faces": {
+          "title": "N Faces",
+          "type": "integer"
+        },
+        "free_form_faces": {
+          "default": 0,
+          "title": "Free Form Faces",
+          "type": "integer"
+        },
+        "face_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Face Ids",
+          "type": "array"
+        },
+        "evidence": {
+          "title": "Evidence",
+          "type": "string"
+        }
+      },
+      "required": [
+        "minor_mm",
+        "major_mm",
+        "n_faces",
+        "evidence"
+      ],
+      "title": "ModelledThread",
+      "type": "object"
+    },
     "OrientedBBox": {
       "additionalProperties": false,
       "properties": {
@@ -3169,6 +3234,7 @@
             "block",
             "housing",
             "gear_like",
+            "serrated",
             "sheet_metal",
             "fastener",
             "freeform",

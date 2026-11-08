@@ -224,7 +224,13 @@ def hole_row(h: Hole) -> dict[str, str]:
         "direction": f"({fmt(d.x, 2)}, {fmt(d.y, 2)}, {fmt(d.z, 2)})",
         "edge": fmt(h.edge_distance_mm, 2) if h.edge_distance_mm is not None else "-",
         "standard": standard_text(h),
-        "threaded": "Likely threaded" if h.likely_threaded else "",
+        "threaded": (
+            f"modelled thread (likely {h.thread.nominal or 'size unclear'})"
+            if h.thread is not None
+            else "Likely threaded"
+            if h.likely_threaded
+            else ""
+        ),
     }
 
 
