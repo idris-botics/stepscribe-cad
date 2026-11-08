@@ -943,6 +943,43 @@
       "title": "CutoutPattern",
       "type": "object"
     },
+    "DesignerMass": {
+      "additionalProperties": false,
+      "description": "A mass the designer gave for a part (``parts: <name>: mass_g``) and what was done with it.",
+      "properties": {
+        "given_g": {
+          "title": "Given G",
+          "type": "number"
+        },
+        "used": {
+          "title": "Used",
+          "type": "boolean"
+        },
+        "estimated_g": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Estimated G"
+        },
+        "note": {
+          "title": "Note",
+          "type": "string"
+        }
+      },
+      "required": [
+        "given_g",
+        "used",
+        "note"
+      ],
+      "title": "DesignerMass",
+      "type": "object"
+    },
     "Evidence": {
       "additionalProperties": false,
       "properties": {
@@ -2210,6 +2247,17 @@
           ],
           "default": null,
           "title": "Inertia Tensor G Mm2"
+        },
+        "designer_mass": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/DesignerMass"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         }
       },
       "required": [

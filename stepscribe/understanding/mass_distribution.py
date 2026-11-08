@@ -15,6 +15,7 @@ from typing import Any
 import numpy as np
 
 from stepscribe.describe.phrases import fmt
+from stepscribe.geometry.designer_mass import LABEL as DESIGNER_LABEL
 from stepscribe.models.schema import Instance, Part, Report
 from stepscribe.understanding.process import complex_geometry_reason
 from stepscribe.understanding.rigid_body import (
@@ -144,6 +145,32 @@ def payload_from_context(ctx: dict[str, Any]) -> tuple[Payload | None, str | Non
     return Payload(mass, np.array(offset)), None
 
 
+def _link_designer_fields(report: Report, instance_ids: list[str]) -> dict[str, Any]:
+    used = link_designer_parts(report, instance_ids)
+    return {"mass_from_designer_parts": used, "mass_label": DESIGNER_LABEL} if used else {}
+
+
+def _designer_fields(part: Part) -> dict[str, Any]:
+    """The label of a mass the designer gave, or the note that it was not used; empty without one."""
+    dm = part.mass.designer_mass
+    if dm is None:
+        return {}
+    if dm.used:
+        return {"mass_source": "designer", "mass_label": dm.note, "mass_given_g": dm.given_g}
+    return {"designer_mass_not_used": dm.note}
+
+
+def link_designer_parts(report: Report, instance_ids: list[str]) -> list[str]:
+    """Ids of the parts, among the instances of one link, whose mass the designer gave and that was used."""
+    assert report.assembly is not None
+    parts = {p.id: p for p in report.parts}
+    by_id = {i.id: i for i in report.assembly.instances}
+    ids = {by_id[i].part_id for i in instance_ids}
+    return sorted(
+        pid for pid in ids if (dm := parts[pid].mass.designer_mass) is not None and dm.used
+    )
+
+
 def mass_distribution(report: Report) -> dict[str, Any]:
     """Principal inertia of every part, of every link (robots) and of the assembly (>= 2 bodies)."""
     parts = [
@@ -151,6 +178,7 @@ def mass_distribution(report: Report) -> dict[str, Any]:
             "id": p.id,
             "material_source": p.mass.material_source,
             **principal_dict(part_body(p)),
+            **_designer_fields(p),
         }
         for p in report.parts
     ]
@@ -165,9 +193,18 @@ def mass_distribution(report: Report) -> dict[str, Any]:
         out["assembly"] = principal_dict(assembly_body(report))
         if report.understanding is not None:
             out["links"] = [
-                {"id": g.id, **principal_dict(link_body(report, g.instance_ids))}
+                {
+                    "id": g.id,
+                    **principal_dict(link_body(report, g.instance_ids)),
+                    **_link_designer_fields(report, g.instance_ids),
+                }
                 for g in report.understanding.kinematics.links
             ]
+    given = sorted(
+        p.id for p in report.parts if p.mass.designer_mass is not None and p.mass.designer_mass.used
+    )
+    if given:
+        out["mass_from_designer"] = given
     guessed = sorted(p.id for p in report.parts if p.mass.material_source == "name_guess")
     if guessed:
         out["density_guessed_from_name"] = guessed
@@ -179,12 +216,25 @@ def _vec_text(v: list[float], nd: int = 3) -> str:
 
 
 def _principal_lines(label: str, d: dict[str, Any]) -> list[str]:
+    lines = _moment_lines(label, d)
+    if d.get("designer_mass_not_used"):
+        lines.append(f"  - {d['designer_mass_not_used']}")
+    if d.get("mass_from_designer_parts"):
+        lines.append(
+            "  - includes a mass from the designer for: " + ", ".join(d["mass_from_designer_parts"])
+        )
+    return lines
+
+
+def _moment_lines(label: str, d: dict[str, Any]) -> list[str]:
     if d["status"] != "computed":
         return [f"- {label}: not computed: {d['reason']}"]
     mom = d["moments_g_mm2"]
     k = d["radii_of_gyration_mm"]
     lines = [
-        f"- {label}: mass {fmt(d['mass_g'])} g, centre of mass {_vec_text(d['com_mm'], 1)} mm; "
+        f"- {label}: mass {fmt(d['mass_g'])} g"
+        + (" (" + DESIGNER_LABEL + ")" if d.get("mass_label") else "")
+        + f", centre of mass {_vec_text(d['com_mm'], 1)} mm; "
         f"principal moments {', '.join(fmt(m, 1) for m in mom)} g*mm^2; "
         f"radii of gyration {', '.join(fmt(x, 2) for x in k)} mm"
     ]

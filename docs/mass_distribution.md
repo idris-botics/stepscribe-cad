@@ -22,6 +22,48 @@ payload:
   offset_mm: [0, 0, 150]   # from the last joint's axis point, in the file's axes
 ```
 
+## A mass you measured
+
+```yaml
+parts:
+  TopPlate:            # the part name as shown in the pack, the same key as `material:`
+    mass_g: 412.5      # grams
+```
+
+The key is `mass_g`, under the part's name in `parts:` (like `material:` and `process:`).
+
+- For a **closed valid solid** the mass is replaced by yours and the inertia is scaled by your mass over the
+  estimated mass (without a material or density the estimate is the one a uniform density of mass over
+  volume gives). The centre of mass and the principal axes do not change. The pack section, `robot.json`
+  (`mass_label`, `mass_from_designer_parts` on the link) and the URDF header comments label it
+  *mass from designer; inertia assumes the same distribution as the estimate*. `report.json` carries
+  `mass.designer_mass` for such a part, and only for such a part.
+- A part that is **refused** (not a closed solid, a shell or surface, complex or free-form geometry) keeps
+  its refusal. The mass you gave is not used, and the pack, `robot.json` and `report.json` say so and why.
+- A value that is not a number, is not above 0, or is not finite stops the run with a message that names
+  the part. A name that matches no part is reported as a warning.
+
+## Agreement between two methods on generated shapes
+
+`scripts/check_inertia.py` (and `tests/test_inertia_agreement.py`) generate deterministic solids from a seeded
+generator (boxes, cylinders, spheres, and boxes and cylinders with cut holes, each rotated and offset at
+random) and compare, for each, the mass, the centre of mass and the three principal moments from
+
+1. the value stepscribe reports (OpenCASCADE's exact integration over the B-rep), and
+2. an independent integral of a fine tessellation of the same solid: signed tetrahedra over the closed
+   triangle mesh, in numpy only. OpenCASCADE only makes the triangles for this one.
+
+This shows that the two methods agree on these shapes. It says nothing about real parts, which are not
+uniform solids, and it is not a statement of accuracy. A fast subset (one of each kind) runs in the normal
+test suite; the full set of 300 is marked slow and runs in CI. Run it yourself with
+`python scripts/check_inertia.py --count 300`.
+
+**Tolerance**: 1e-3 relative on the mass and on each principal moment, and 1e-4 of the part's diagonal on the
+centre of mass. A mesh is inscribed in every curved surface, so it is slightly smaller than the solid; for a
+chord that subtends an angle t the area of a circle is short by about t^2/6 and a moment of it by at most about
+4 t^2/6. The meshes use t <= 0.03 rad, which bounds the difference from the tessellation by 6e-4, so 1e-3 is
+above what the mesh itself can cause. A larger difference points at one of the two methods.
+
 ## Which way gravity points
 
 Gravity points along the opposite of the up axis used for the analysis. The up axis is `+Z` unless you pass

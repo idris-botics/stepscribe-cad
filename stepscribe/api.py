@@ -342,6 +342,12 @@ def analyze_full(
         proto_parts.setdefault(key, []).append(ap)
     assign_part_ids([ap.part for ap in parts])
     parts.sort(key=lambda ap: ap.part.id)
+    known = {ap.part.name for ap in parts}
+    for name in opts.extra.get("part_masses", {}):
+        if name not in known:
+            warnings.append(
+                f"design_context.yaml gives mass_g for '{name}', which is not a part name: not used"
+            )
     report = Report(
         meta=_meta([s.name for s in model.sources] or [p.name], model.original_unit, opts),
         parts=[ap.part for ap in parts],

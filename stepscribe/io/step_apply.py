@@ -87,7 +87,13 @@ def use_material(part: Part, geom: PartGeom, mat: StepMaterial, opts: AnalyzeOpt
         density = guess[0] if guess else None
     if density is None:
         return  # nothing usable: behaviour stays as it was
+    given = part.mass.designer_mass
+    if given is not None and given.used:
+        return  # a mass the designer gave outranks the file's material
     part.mass = mass_properties(geom.shape, geom.name, density, mat.name, "step_file")
+    part.mass.designer_mass = (
+        given  # a refused part keeps the note that its given mass was not used
+    )
     mat.density_used = True
 
 

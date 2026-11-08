@@ -20,6 +20,7 @@ material: ""           # default material for every part, e.g. "aluminium 6061" 
 parts:                 # per-part material override, keyed by part name as shown in the pack
   # TopPlate:
   #   material: alu
+  #   mass_g: 412.5      # a mass you measured, in grams: replaces the estimate (closed solids only)
 loads: ""              # expected forces, torques, payload (free text)
 # payload:             # a mass carried at the end of a robot arm: used for the static joint loads
 #   mass_kg: 2.5
@@ -38,6 +39,9 @@ def load_context(path: str | Path) -> dict[str, Any]:
         raw = yaml.safe_load(fh) or {}
     if not isinstance(raw, dict):
         raise ValueError("design context must be a YAML mapping")
+    from stepscribe.geometry.designer_mass import parse_masses
+
+    parse_masses(raw)  # a bad mass_g is refused here, with a message that names the part
     return {k: v for k, v in raw.items() if v not in (None, "", [], {})}
 
 
@@ -179,6 +183,11 @@ def apply_context(opts: Any, ctx: dict[str, Any]) -> None:
     if opts.material is None and opts.density is None:
         opts.material = default_material(ctx)
     opts.extra["part_materials"] = part_materials(ctx)
+    from stepscribe.geometry.designer_mass import parse_masses
+
+    masses = parse_masses(ctx)
+    if masses:  # absent without a designer mass, so a run without one is unchanged
+        opts.extra["part_masses"] = masses
     proc = default_process(ctx)
     if proc:
         opts.extra["default_process"] = proc

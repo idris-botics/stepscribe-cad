@@ -51,6 +51,17 @@ class Inference(_M):
 
 
 # ---------- per-part facts ----------
+class DesignerMass(_M):
+    """A mass the designer gave for a part (``parts: <name>: mass_g``) and what was done with it."""
+
+    given_g: float
+    used: bool  # True: it replaced the estimate; False: the part is refused and the estimate stands
+    estimated_g: float | None = (
+        None  # the estimate it replaced (used only; None when there was none)
+    )
+    note: str  # the label when used, or why it was not used
+
+
 class MassProperties(_M):
     volume_mm3: float
     surface_area_mm2: float
@@ -60,6 +71,15 @@ class MassProperties(_M):
     material_assumed: str | None = None
     material_source: Literal["user", "step_file", "name_guess", "none"] = "none"
     inertia_tensor_g_mm2: list[list[float]] | None = None
+    designer_mass: DesignerMass | None = None  # absent unless the designer gave a mass for the part
+
+    @model_serializer(mode="wrap")
+    def _omit_absent_designer_mass(self, handler: Any) -> dict[str, Any]:
+        """report.json carries ``designer_mass`` only for a part the designer gave a mass for."""
+        data: dict[str, Any] = handler(self)
+        if data.get("designer_mass") is None:
+            data.pop("designer_mass", None)
+        return data
 
 
 class TopologySummary(_M):
