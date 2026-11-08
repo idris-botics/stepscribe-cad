@@ -406,3 +406,76 @@ def test_a_partial_map_is_described_in_the_matching_line(tmp_path: Path, robot) 
         run(tmp_path, robot, make_urdf(robot), "--json", "--map", f"{ids[2]}=link_2").output
     )
     assert "among the remaining links" in data["matching"]
+
+
+# ---- hostile encodings -----------------------------------------------------------------------------
+BOOM = '<!DOCTYPE robot [<!ENTITY x "boom">]><robot name="&x;"><link name="a"/></robot>'
+
+
+def run_bytes(tmp_path: Path, robot: dict[str, Any], raw: bytes):  # type: ignore[no-untyped-def]
+    rj = tmp_path / "robot.json"
+    rj.write_text(json.dumps(robot), encoding="utf-8")
+    uf = tmp_path / "theirs.urdf"
+    uf.write_bytes(raw)
+    return runner.invoke(app, ["compare-robot", str(rj), str(uf), "--json"])
+
+
+def plain(result) -> None:  # type: ignore[no-untyped-def]
+    """Rejected with a message and exit 1, or read safely with exit 0: never a traceback."""
+    assert result.exit_code in (0, 1), result.output
+    assert (
+        "Traceback" not in result.output and "Error" not in result.output.split("compare-robot:")[0]
+    )
+    assert result.exception is None or isinstance(result.exception, SystemExit), result.exception
+
+
+def test_utf16_with_a_byte_order_mark_is_rejected_plainly(tmp_path: Path, robot) -> None:  # type: ignore[no-untyped-def]
+    for text in (make_urdf(robot), BOOM):
+        for codec in ("utf-16", "utf-16-le", "utf-16-be"):
+            result = run_bytes(tmp_path, robot, ("﻿" + text).encode(codec))
+            plain(result)
+            assert result.exit_code == 1 and "cannot be read as a URDF" in result.output, codec
+
+
+def test_an_xml_declaration_that_disagrees_with_the_bytes_is_safe(tmp_path: Path, robot) -> None:  # type: ignore[no-untyped-def]
+    body = make_urdf(robot).split("\n", 1)[1]
+    for declared in ("utf-16", "UTF-32", "ebcdic-cp-us", "iso-8859-1", "nonsense"):
+        text = f'<?xml version="1.0" encoding="{declared}"?>\n{body}'
+        plain(run_bytes(tmp_path, robot, text.encode("utf-8")))
+    # the declaration does not let an entity declaration through
+    declared_boom = '<?xml version="1.0" encoding="utf-16"?>' + BOOM
+    result = run_bytes(tmp_path, robot, declared_boom.encode("utf-8"))
+    assert result.exit_code == 1 and "DOCTYPE and entity" in result.output
+
+
+@pytest.mark.parametrize(
+    "doctype",
+    [
+        '<!doctype robot [<!entity x "boom">]>',
+        '<!DocType robot [<!EnTiTy x "boom">]>',
+        '<!DOCTYPE\nrobot\t[ <!ENTITY\n x\n"boom"> ]>',
+        '<!DOCTYPE robot SYSTEM "file:///etc/passwd">',
+        '<!DOCTYPE robot PUBLIC "-//x//y" "http://example.invalid/x.dtd">',
+        '<!ENTITY x "boom">',
+    ],
+)
+def test_a_doctype_in_any_case_or_spacing_is_rejected(tmp_path: Path, robot, doctype: str) -> None:  # type: ignore[no-untyped-def]
+    text = f'<?xml version="1.0"?>\n{doctype}\n<robot name="&x;"><link name="a"/></robot>'
+    result = run_bytes(tmp_path, robot, text.encode("utf-8"))
+    plain(result)
+    assert result.exit_code == 1 and "cannot be read as a URDF" in result.output
+
+
+def test_a_utf8_byte_order_mark_in_front_of_a_valid_urdf_is_read(tmp_path: Path, robot) -> None:  # type: ignore[no-untyped-def]
+    result = run_bytes(tmp_path, robot, b"\xef\xbb\xbf" + make_urdf(robot).encode("utf-8"))
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.output)["links"][0]["mass_ratio"] == pytest.approx(1.0, abs=1e-5)
+
+
+def test_bytes_that_are_not_text_do_not_crash(tmp_path: Path, robot) -> None:  # type: ignore[no-untyped-def]
+    for raw in (
+        b"\x00\x01\x02" * 1000,
+        b"\xff\xfe\xfd" * 1000,
+        b"<robot>" + b"\xc3\x28" * 50 + b"</robot>",
+    ):
+        plain(run_bytes(tmp_path, robot, raw))

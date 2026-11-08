@@ -195,7 +195,9 @@ def load_urdf(path: str | Path) -> Urdf:
     try:
         if p.stat().st_size > MAX_BYTES:
             raise CompareError("the URDF is larger than 20 MB, so it was not read")
-        text = p.read_text(encoding="utf-8", errors="replace")
+        text = p.read_text(
+            encoding="utf-8-sig", errors="replace"
+        )  # a byte-order mark is not content
     except OSError as exc:
         raise CompareError(f"{show(p.name)} cannot be read") from exc
     try:
