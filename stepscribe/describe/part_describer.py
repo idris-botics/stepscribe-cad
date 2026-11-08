@@ -35,7 +35,7 @@ def material_text(part: Part) -> str:
     if m.material_assumed and m.material_source == "user":
         return f"material {m.material_assumed} (given)"
     if m.material_assumed and m.material_source == "step_file":
-        return f"material {m.material_assumed} (stated in the STEP file)"
+        return f"material {m.material_assumed} (stated in the STEP file; CAD tools often assign a default material to every part, check it)"
     if m.material_assumed:
         return f"material guess {m.material_assumed} from the name (assumed, not measured)"
     return "material unknown"
@@ -73,7 +73,7 @@ def step_lines(part: Part) -> list[str]:
         elif m.density_stated is not None:
             text += f", density {_n(m.density_stated)} in a unit that cannot be read: not used"
         text += (
-            "; used for the mass."
+            "; used for the mass (CAD tools often assign a default material to every part, check it)."
             if m.density_used
             else "; not used for the mass (a designer value, or no density, takes precedence)."
         )

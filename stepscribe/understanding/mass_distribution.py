@@ -144,6 +144,12 @@ def payload_from_context(ctx: dict[str, Any]) -> tuple[Payload | None, str | Non
     return Payload(mass, np.array(offset)), None
 
 
+def step_material_ids(report: Report) -> list[str]:
+    """Parts whose mass uses the material the STEP file states: unverified, CAD tools often assign a default
+    material to every part."""
+    return sorted(p.id for p in report.parts if p.mass.material_source == "step_file")
+
+
 def mass_distribution(report: Report) -> dict[str, Any]:
     """Principal inertia of every part, of every link (robots) and of the assembly (>= 2 bodies)."""
     parts = [
@@ -168,6 +174,9 @@ def mass_distribution(report: Report) -> dict[str, Any]:
                 {"id": g.id, **principal_dict(link_body(report, g.instance_ids))}
                 for g in report.understanding.kinematics.links
             ]
+    from_step = step_material_ids(report)
+    if from_step:
+        out["material_from_step_file"] = from_step
     guessed = sorted(p.id for p in report.parts if p.mass.material_source == "name_guess")
     if guessed:
         out["density_guessed_from_name"] = guessed
@@ -219,6 +228,11 @@ def mass_markdown(
         lines += _principal_lines(f"Link {link['id']}", link)
     for part in dist["parts"]:
         lines += _principal_lines(f"Part {part['id']}", part)
+    if dist.get("material_from_step_file"):
+        lines.append(
+            "- Material stated in the STEP file, not verified (CAD tools often assign a default material to every part, check it), used for the mass of: "
+            + ", ".join(dist["material_from_step_file"])
+        )
     if dist.get("density_guessed_from_name"):
         lines.append(
             "- Density assumed from the part name (a guess) for: "

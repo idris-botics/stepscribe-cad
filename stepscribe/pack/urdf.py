@@ -85,6 +85,14 @@ def _header(robot: dict[str, Any], meshes: dict[str, LinkMeshes] | None = None) 
         ),
         *_mesh_header(robot, meshes),
         "Mass and inertia are estimates from CAD volume and an assumed density, not measurements.",
+        *(
+            [
+                "Some link masses use the material the STEP file states, which is not verified (CAD tools "
+                "often assign a default material to every part); see robot.json."
+            ]
+            if any(link.get("mass_material_from_step_file") for link in robot["links"])
+            else []
+        ),
         "Models of this kind are often hollow or simplified outer skins: mass taken from them is not reliable.",
         "A revolute joint needs a lower/upper limit in URDF (they default to 0, which locks it). Where",
         "none is known the joint is written as type continuous, with no limit element, and a comment;",

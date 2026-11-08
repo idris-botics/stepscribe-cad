@@ -205,6 +205,15 @@ def build_robot(report: Report, payload: Payload | None = None) -> dict[str, Any
         }
         row.update(_link_mass(report, g.instance_ids))
         row["mass_is_estimate"] = True
+        step_ids = sorted(
+            {
+                inst_part[i]
+                for i in g.instance_ids
+                if parts[inst_part[i]].mass.material_source == "step_file"
+            }
+        )
+        if step_ids:  # absent unless a part of the link uses the material the STEP file states
+            row["mass_material_from_step_file"] = step_ids
         row["principal_inertia"] = principal_dict(link_body(report, g.instance_ids))
         low = sorted(
             {
@@ -284,11 +293,27 @@ def build_robot(report: Report, payload: Payload | None = None) -> dict[str, Any
     hedge = frame_hedge(report.warnings)
     if hedge:
         warnings.insert(0, hedge)
-    if any(link["mass_g"] is None for link in links):
+    n_none = sum(link["mass_g"] is None for link in links)
+    if n_none == len(links):
         warnings.insert(
             0,
             "No material is set, so link masses, centres of mass and inertias are unknown: pass "
             "--material or set `material:` in design_context.yaml.",
+        )
+    elif n_none:
+        warnings.insert(
+            0,
+            f"{n_none} of {len(links)} links have no mass because their parts have no material: pass "
+            "--material or set `material:` in design_context.yaml (a part can be given its own under `parts:`).",
+        )
+    from_step = sorted(
+        {pid for link in links for pid in link.get("mass_material_from_step_file", [])}
+    )
+    if from_step:
+        warnings.append(
+            "Link masses use the material the STEP file states for these parts, which is not verified "
+            "(CAD tools often assign a default material to every part, check it; or set `material:` "
+            "in design_context.yaml): " + ", ".join(from_step)
         )
     if complex_bodies:
         warnings.append(
