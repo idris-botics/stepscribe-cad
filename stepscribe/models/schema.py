@@ -60,6 +60,17 @@ class DesignerMass(_M):
         None  # the estimate it replaced (used only; None when there was none)
     )
     note: str  # the label when used, or why it was not used
+    ratio_note: str | None = (
+        None  # a neutral note when the given mass is far from the solid estimate
+    )
+
+    @model_serializer(mode="wrap")
+    def _omit_absent_ratio_note(self, handler: Any) -> dict[str, Any]:
+        """``ratio_note`` appears only when there is one."""
+        data: dict[str, Any] = handler(self)
+        if data.get("ratio_note") is None:
+            data.pop("ratio_note", None)
+        return data
 
 
 class DensityRange(_M):

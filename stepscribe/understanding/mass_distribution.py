@@ -186,7 +186,14 @@ def _designer_fields(part: Part) -> dict[str, Any]:
     if dm is None:
         return {}
     if dm.used:
-        return {"mass_source": "designer", "mass_label": dm.note, "mass_given_g": dm.given_g}
+        out: dict[str, Any] = {
+            "mass_source": "designer",
+            "mass_label": dm.note,
+            "mass_given_g": dm.given_g,
+        }
+        if dm.ratio_note:
+            out["mass_ratio_note"] = dm.ratio_note
+        return out
     return {"designer_mass_not_used": dm.note}
 
 
@@ -263,6 +270,8 @@ def _principal_lines(label: str, d: dict[str, Any]) -> list[str]:
             + ", ".join(_span(k, 2) for k in r["radii_of_gyration_mm"])
             + " mm"
         )
+    if d.get("mass_ratio_note"):
+        lines.append(f"  - {d['mass_ratio_note']}")
     if d.get("mass_from_designer_parts"):
         lines.append(
             "  - includes a mass from the designer for: " + ", ".join(d["mass_from_designer_parts"])

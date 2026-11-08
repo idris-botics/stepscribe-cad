@@ -19,6 +19,8 @@ from stepscribe.models.schema import DesignerMass, Part
 
 LABEL = "mass from designer; inertia assumes the same distribution as the estimate"
 KEY = "mass_g"
+LOW_PCT = 50.0  # a given mass below this share of the solid estimate gets a note
+HIGH_PCT = 120.0  # or above this one
 
 
 def parse_masses(ctx: dict[str, Any]) -> dict[str, float]:
@@ -38,6 +40,19 @@ def parse_masses(ctx: dict[str, Any]) -> dict[str, float]:
             raise ValueError(f"{where} must be a number above 0 grams, not {value!r}")
         out[str(name)] = float(value)
     return out
+
+
+def ratio_note(given_g: float, estimated_g: float | None) -> str | None:
+    """A neutral note when the given mass is below 50 % or above 120 % of the solid estimate, else None."""
+    if estimated_g is None or estimated_g <= 0:
+        return None
+    pct = given_g / estimated_g * 100.0
+    if LOW_PCT <= pct <= HIGH_PCT:
+        return None
+    return (
+        f"the measured mass is {pct:.0f}% of the solid estimate; "
+        "the part may be hollow, printed or made of a different material"
+    )
 
 
 def refusal(part: Part) -> str | None:
@@ -85,4 +100,10 @@ def apply_designer_mass(part: Part, shape: TopoDS_Shape, given_g: float) -> None
     m.mass_g = given_g
     m.density_range = None  # a measured mass has no range
     m.inertia_tensor_g_mm2 = inertia
-    m.designer_mass = DesignerMass(given_g=given_g, used=True, estimated_g=estimated, note=LABEL)
+    m.designer_mass = DesignerMass(
+        given_g=given_g,
+        used=True,
+        estimated_g=estimated,
+        note=LABEL,
+        ratio_note=ratio_note(given_g, estimated),
+    )
