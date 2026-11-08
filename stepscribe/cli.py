@@ -736,6 +736,13 @@ def compare_robot(
     except cmp.CompareError as exc:
         typer.echo(f"compare-robot: {exc}", err=True)
         raise typer.Exit(1) from exc
+    except Exception as exc:  # noqa: BLE001 - an input we could not make sense of is refused, not a traceback
+        typer.echo(
+            f"compare-robot: the inputs could not be compared ({type(exc).__name__}); "
+            "check that they are a stepscribe robot and a URDF",
+            err=True,
+        )
+        raise typer.Exit(1) from exc
     typer.echo(
         json.dumps(cmp.to_json(result), indent=2) if json_out else cmp.to_text(result).strip()
     )

@@ -356,3 +356,53 @@ def test_a_missing_urdf_folder_or_unreadable_path_is_invalid_input(tmp_path: Pat
     empty.mkdir()
     result = runner.invoke(app, ["compare-robot", str(rj), str(empty)])
     assert result.exit_code == 1 and "no robot.urdf" in result.output
+
+
+# ---- second review ---------------------------------------------------------------------------------
+def test_an_oversized_or_deeply_nested_robot_json_is_refused_with_the_right_message(
+    tmp_path: Path, robot
+) -> None:  # type: ignore[no-untyped-def]
+    urdf = tmp_path / "t.urdf"
+    urdf.write_text(make_urdf(robot), encoding="utf-8")
+    big = tmp_path / "big.json"
+    with big.open("wb") as fh:
+        fh.write(b"{" + b" " * (MAX_BYTES + 10) + b"}")
+    result = runner.invoke(app, ["compare-robot", str(big), str(urdf)])
+    assert result.exit_code == 1 and "larger than 20 MB" in result.output
+    nested = tmp_path / "nested.json"
+    nested.write_text("[" * 200_000, encoding="utf-8")
+    result = runner.invoke(app, ["compare-robot", str(nested), str(urdf)])
+    assert result.exit_code == 1 and "not readable JSON" in result.output
+    assert "Traceback" not in result.output
+
+
+def test_two_links_with_one_id_are_refused(tmp_path: Path, robot) -> None:  # type: ignore[no-untyped-def]
+    broken = json.loads(json.dumps(robot))
+    broken["links"][1]["id"] = broken["links"][0]["id"]
+    result = run(tmp_path, broken, make_urdf(robot))
+    assert result.exit_code == 1 and "same id" in result.output
+
+
+def test_joints_listed_out_of_order_still_make_a_chain(tmp_path: Path, robot) -> None:  # type: ignore[no-untyped-def]
+    shuffled = json.loads(json.dumps(robot))
+    shuffled["joints"] = list(reversed(shuffled["joints"]))
+    rows = links_of(run(tmp_path, shuffled, make_urdf(robot), "--json"))
+    assert len(rows) == 7
+    for r in rows:
+        assert r["mass_ratio"] == pytest.approx(1.0, abs=1e-5)
+
+
+def test_com_says_so_when_our_file_is_not_z_up(tmp_path: Path, robot) -> None:  # type: ignore[no-untyped-def]
+    yup = json.loads(json.dumps(robot))
+    yup["static_holding_loads"]["up_axis"] = "+Y"
+    out = run(tmp_path, yup, make_urdf(robot), "--com").output
+    assert "up axis is +Y" in out and "does not mean anything" in out
+    assert "up axis is" not in run(tmp_path, robot, make_urdf(robot), "--com").output
+
+
+def test_a_partial_map_is_described_in_the_matching_line(tmp_path: Path, robot) -> None:  # type: ignore[no-untyped-def]
+    ids = [robot["base_link"]] + [j["child"] for j in robot["joints"]]
+    data = json.loads(
+        run(tmp_path, robot, make_urdf(robot), "--json", "--map", f"{ids[2]}=link_2").output
+    )
+    assert "among the remaining links" in data["matching"]

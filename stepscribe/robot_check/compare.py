@@ -26,6 +26,7 @@ from stepscribe.robot_check.model import (
     MAX_BYTES,
     MAX_LINKS,
     Joint,
+    Link,
     Urdf,
     UrdfError,
     parse_urdf,
@@ -75,15 +76,21 @@ class Comparison:
     show_names: bool = False
     com: bool = False
     map_only: bool = False
+    up_axis: str = "+Z"
 
 
 # ------------------------------------------------------------------ our side
 def _read_json(path: Path) -> Any:
     try:
-        if path.stat().st_size > MAX_BYTES:
-            raise CompareError("the file is larger than 20 MB")
-        return json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError) as exc:
+        too_big = path.stat().st_size > MAX_BYTES
+        text = "" if too_big else path.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise CompareError(f"{show(path.name)} cannot be read") from exc
+    if too_big:
+        raise CompareError("the file is larger than 20 MB")
+    try:
+        return json.loads(text)
+    except (ValueError, RecursionError) as exc:
         raise CompareError(f"{show(path.name)} is not readable JSON") from exc
 
 
@@ -146,6 +153,8 @@ def our_links(robot: dict[str, Any]) -> list[OurLink]:
             )
         except (KeyError, TypeError, ValueError, AttributeError) as exc:
             raise CompareError("robot.json has a link that cannot be read") from exc
+    if len({link.id for link in out}) != len(out):
+        raise CompareError("robot.json has two links with the same id")
     return out
 
 
@@ -156,12 +165,19 @@ def our_order(robot: dict[str, Any], links: list[OurLink]) -> list[OurLink] | No
     if not isinstance(joints, list) or not joints or len(links) != len(joints) + 1:
         return None
     by_id = {link.id: link for link in links}
-    chain: list[str] = [str(base)]
+    child_of: dict[str, str] = {}
     for j in joints:
-        if not isinstance(j, dict) or j.get("parent") != chain[-1]:
-            return None
-        chain.append(str(j.get("child")))
-    if len(set(chain)) != len(chain) or any(c not in by_id for c in chain):
+        if not isinstance(j, dict) or str(j.get("parent")) in child_of:
+            return None  # a branch: two joints leave one link
+        child_of[str(j.get("parent"))] = str(j.get("child"))
+    chain: list[str] = [str(base)]
+    while chain[-1] in child_of and len(chain) <= len(links):
+        chain.append(child_of[chain[-1]])
+    if (
+        len(chain) != len(links)
+        or len(set(chain)) != len(chain)
+        or any(c not in by_id for c in chain)
+    ):
         return None
     return [by_id[c] for c in chain]
 
@@ -218,6 +234,26 @@ def _tensor(inertia: dict[str, float]) -> np.ndarray | None:
     )
 
 
+def their_link(
+    link: Link, rot: np.ndarray | None = None, pos: np.ndarray | None = None
+) -> TheirLink:
+    """A URDF link's inertial values; its zero-pose frame (rot, pos) is given along a chain."""
+    ine = link.inertial
+    if ine is None:
+        return TheirLink(link.name, False, None, None, None, missing="no <inertial>")
+    tensor = _tensor(ine.inertia)
+    com = None if rot is None or pos is None else pos + rot @ ine.origin
+    return TheirLink(
+        link.name,
+        True,
+        ine.mass,
+        tensor,
+        ine.origin,
+        com,
+        None if ine.mass is not None and tensor is not None else "incomplete <inertial>",
+    )
+
+
 def urdf_chain(urdf: Urdf) -> tuple[list[TheirLink] | None, str | None]:
     """The URDF's links from the root along a serial chain with each link's zero-pose frame, or the reason
     it is not one. Fixed joints count: they separate links."""
@@ -257,22 +293,7 @@ def urdf_chain(urdf: Urdf) -> tuple[list[TheirLink] | None, str | None]:
     for name in order:
         link = links_by_name[name]
         rot, pos = frames[name]
-        ine = link.inertial
-        if ine is None:
-            out.append(TheirLink(name, False, None, None, None, missing="no <inertial>"))
-            continue
-        tensor = _tensor(ine.inertia)
-        out.append(
-            TheirLink(
-                name,
-                True,
-                ine.mass,
-                tensor,
-                ine.origin,
-                pos + rot @ ine.origin,
-                None if ine.mass is not None and tensor is not None else "incomplete <inertial>",
-            )
-        )
+        out.append(their_link(link, rot, pos))
     return out, None
 
 
@@ -334,6 +355,7 @@ def compare(
     ours_chain = our_order(robot, ours_all)
     mapping = mapping or {}
     result = Comparison(False, show_names=with_names, com=with_com)
+    result.up_axis = str(robot.get("static_holding_loads", {}).get("up_axis", "+Z"))
 
     by_our = {link.id: link for link in ours_all}
     urdf_names = {link.name for link in urdf.links}
@@ -371,34 +393,16 @@ def compare(
         # keep the order from the base
         pos = {link.id: k for k, link in enumerate(ours_chain)}
         pairs.sort(key=lambda pr: pos[pr[0].id])
-        result.matching = "order from the base" + (", with --map overrides" if mapping else "")
+        result.matching = "order from the base" + (
+            "; links named in --map are paired as given, the others by their order among the remaining links"
+            if mapping
+            else ""
+        )
     else:
         # an explicit --map on a model that is not a matching chain: only the named pairs are compared
         urdf_links = {link.name: link for link in urdf.links}
         for a, b in mapping.items():
-            ul = urdf_links[b]
-            ine = ul.inertial
-            tensor = _tensor(ine.inertia) if ine is not None else None
-            pairs.append(
-                (
-                    by_our[a],
-                    TheirLink(
-                        b,
-                        ine is not None,
-                        ine.mass if ine else None,
-                        tensor,
-                        ine.origin if ine else None,
-                        None,
-                        "no <inertial>"
-                        if ine is None
-                        else (
-                            None
-                            if ine.mass is not None and tensor is not None
-                            else "incomplete <inertial>"
-                        ),
-                    ),
-                )
-            )
+            pairs.append((by_our[a], their_link(urdf_links[b])))
         result.matching = f"--map only ({why}; other links not compared)"
         result.map_only = True
         result.com = False
@@ -511,6 +515,12 @@ def to_text(result: Comparison) -> str:
         lines.append(
             "com distance: in the base frame at the zero pose, each file's own forward kinematics; "
             "it assumes both base frames coincide."
+            + (
+                f" Our file's up axis is {result.up_axis}; if the URDF is Z-up the two frames differ and "
+                "the distance does not mean anything."
+                if result.up_axis != "+Z"
+                else ""
+            )
         )
     summary = summary_line(result)
     lines += ["", summary or "", "", NOTE, UNITS_NOTE]

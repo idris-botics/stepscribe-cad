@@ -29,8 +29,10 @@ checked.
 
 Only for a **serial chain with the same number of links**: by order from the base. The matching is printed. If
 the counts differ, or either side is not a chain (a branch, a loop, several roots), the command says so and
-stops without guessing; the exit code is still 0. `--map our_link=urdf_link,...` pairs links yourself: the
-named pairs are compared, and the rest are matched by order when the structure allows it.
+stops without guessing; the exit code is still 0. `--map our_link=urdf_link,...` pairs links yourself (it takes the real link names, so look at them locally with
+`--with-names` first): the named pairs are compared, and the rest are matched by their order among the remaining
+links when the structure allows it. Without a matching chain only the named pairs are compared, labelled in the
+order of `--map`.
 
 A link with no `<inertial>` in the URDF, an incomplete one, or a link we have no estimate for (for example
 because no material was given) is reported as such, with no ratio.
