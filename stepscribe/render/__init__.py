@@ -61,11 +61,9 @@ _made: set[str] = set()  # file names saved in the current run (to tell what a f
 
 
 def image_reason(exc: BaseException) -> str:
-    """A short plain reason for an image that was not drawn: the error type and a cleaned message."""
-    from stepscribe.text_safety import clean_name
-
-    text = clean_name(str(exc))[:80]
-    return f"{type(exc).__name__}: {text}" if text else type(exc).__name__
+    """A short plain reason for an image that was not drawn: the error type only. An exception text could hold
+    anything (a file name, text from the model), so it never goes into a pack file."""
+    return type(exc).__name__
 
 
 def guarded(
