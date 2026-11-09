@@ -943,6 +943,80 @@
       "title": "CutoutPattern",
       "type": "object"
     },
+    "DensityRange": {
+      "additionalProperties": false,
+      "description": "Typical density range of the material family, where the density is an assumption (see density_range.py).",
+      "properties": {
+        "min_g_cm3": {
+          "title": "Min G Cm3",
+          "type": "number"
+        },
+        "max_g_cm3": {
+          "title": "Max G Cm3",
+          "type": "number"
+        },
+        "reason": {
+          "title": "Reason",
+          "type": "string"
+        }
+      },
+      "required": [
+        "min_g_cm3",
+        "max_g_cm3",
+        "reason"
+      ],
+      "title": "DensityRange",
+      "type": "object"
+    },
+    "DesignerMass": {
+      "additionalProperties": false,
+      "description": "A mass the designer gave for a part (``parts: <name>: mass_g``) and what was done with it.",
+      "properties": {
+        "given_g": {
+          "title": "Given G",
+          "type": "number"
+        },
+        "used": {
+          "title": "Used",
+          "type": "boolean"
+        },
+        "estimated_g": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Estimated G"
+        },
+        "note": {
+          "title": "Note",
+          "type": "string"
+        },
+        "ratio_note": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ratio Note"
+        }
+      },
+      "required": [
+        "given_g",
+        "used",
+        "note"
+      ],
+      "title": "DesignerMass",
+      "type": "object"
+    },
     "Evidence": {
       "additionalProperties": false,
       "properties": {
@@ -2199,7 +2273,8 @@
             "user",
             "step_file",
             "name_guess",
-            "none"
+            "none",
+            "designer_mass"
           ],
           "title": "Material Source",
           "type": "string"
@@ -2221,6 +2296,28 @@
           ],
           "default": null,
           "title": "Inertia Tensor G Mm2"
+        },
+        "designer_mass": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/DesignerMass"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "density_range": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/DensityRange"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         }
       },
       "required": [

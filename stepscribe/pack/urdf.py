@@ -94,6 +94,14 @@ def _header(robot: dict[str, Any], meshes: dict[str, LinkMeshes] | None = None) 
             else []
         ),
         "Models of this kind are often hollow or simplified outer skins: mass taken from them is not reliable.",
+        *(
+            [
+                "Ranges exist for some link masses and inertias and for some joint loads where the density is an "
+                "assumption (see robot.json); the values in this file are the nominal ones."
+            ]
+            if any(link.get("mass_range") for link in robot["links"])
+            else []
+        ),
         "A revolute joint needs a lower/upper limit in URDF (they default to 0, which locks it). Where",
         "none is known the joint is written as type continuous, with no limit element, and a comment;",
         "change it to revolute and add the real limit (design_context.yaml: kinematics: joints: range).",
@@ -141,6 +149,8 @@ def build_urdf(robot: dict[str, Any] | None, meshes: dict[str, LinkMeshes] | Non
     for link in robot["links"]:
         names = ", ".join(i["name"] for i in link["instances"])
         out.append(f"  <!-- {_c(link['id'])}: {_c(names)} -->")
+        if link.get("mass_label"):  # only when the designer gave a mass for one of its parts
+            out.append(f"  <!-- {_c(link['id'])}: {_c(link['mass_label'])} -->")
         out.append(f"  <link name={quoteattr(link['id'])}>")
         if link["mass_g"] is not None:
             if not wrote_note:

@@ -168,7 +168,12 @@
             0.0,
             28767.07
           ]
-        ]
+        ],
+        "density_range": {
+          "min_g_cm3": 2.65,
+          "max_g_cm3": 2.85,
+          "reason": "material known only at family level; range for the family"
+        }
       },
       "topology": {
         "solids": 1,

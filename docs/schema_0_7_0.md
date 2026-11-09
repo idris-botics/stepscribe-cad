@@ -16,7 +16,7 @@ The bump commit must cover every line below and change the status line above to 
   hole's bores alternate between a minor and a major diameter.
 - `ShapeClass.label`: the value `serrated` (equal repeats that fit no gear module or belt pitch).
 
-## Added by #24 and #25 (to check when those are merged)
+## Added by #24 and #25 (merged; checked by the test)
 
 - `Mass.designer_mass`: a `DesignerMass` (given, used, estimated, note, ratio note), absent unless the designer
   gave a mass for the part (#24).

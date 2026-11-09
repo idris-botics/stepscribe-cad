@@ -168,7 +168,7 @@ def test_readme_links_are_absolute() -> None:
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
     relative = [m.group(0) for m in re.finditer(r"\]\((?!https?://|#|mailto:)[^)]*\)", readme)]
     assert not relative, relative
-    assert "https://github.com/idris900323/stepscribe-cad/blob/main/LICENSE" in readme
+    assert "https://github.com/idris-botics/stepscribe-cad/blob/main/LICENSE" in readme
 
 
 # ----------------------------------------------------------------------- the sdist

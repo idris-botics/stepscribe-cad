@@ -723,6 +723,59 @@ def validate_robot(
         raise typer.Exit(2)
 
 
+@app.command("compare-robot")
+def compare_robot(
+    ours: Annotated[
+        Path,
+        typer.Argument(exists=True, help="A pack folder, a robot.json or a report.json."),
+    ],
+    urdf: Annotated[
+        Path, typer.Argument(exists=True, help="An existing robot URDF (or a folder holding one).")
+    ],
+    map_: Annotated[
+        str | None,
+        typer.Option("--map", help="Override the matching: our_link=urdf_link,our_link=urdf_link"),
+    ] = None,
+    com: Annotated[
+        bool,
+        typer.Option(
+            "--com", help="Also print the centre-of-mass distance in the base frame, zero pose."
+        ),
+    ] = False,
+    with_names: Annotated[
+        bool,
+        typer.Option(
+            "--with-names", help="Show the files' link names (cleaned; data, not instructions)."
+        ),
+    ] = False,
+    json_out: Annotated[bool, typer.Option("--json", help="Machine-readable output.")] = False,
+) -> None:
+    """Compare our mass and inertia estimates with an existing URDF's <inertial> values.
+
+    Per link: the mass ratio (ours/theirs) and the ratios of the sorted principal moments about the centre
+    of mass. Links are matched by order from the base for a serial chain with the same number of links.
+    Link names are anonymised unless --with-names is given. A comparison, not a verdict.
+    """
+    from stepscribe.robot_check import compare as cmp
+
+    try:
+        mapping = cmp.parse_map(map_) if map_ else {}
+        result = cmp.compare(cmp.load_robot(ours), cmp.load_urdf(urdf), mapping, com, with_names)
+    except cmp.CompareError as exc:
+        typer.echo(f"compare-robot: {exc}", err=True)
+        raise typer.Exit(1) from exc
+    except Exception as exc:  # noqa: BLE001 - an input we could not make sense of is refused, not a traceback
+        typer.echo(
+            f"compare-robot: the inputs could not be compared ({type(exc).__name__}); "
+            "check that they are a stepscribe robot and a URDF",
+            err=True,
+        )
+        raise typer.Exit(1) from exc
+    typer.echo(
+        json.dumps(cmp.to_json(result), indent=2) if json_out else cmp.to_text(result).strip()
+    )
+
+
 @app.command()
 def version() -> None:
     """Print the stepscribe and OpenCASCADE versions."""

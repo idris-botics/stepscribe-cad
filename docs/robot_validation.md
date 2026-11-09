@@ -17,7 +17,7 @@ A URDF that parses and is a correct tree. Errors (code `S###`) make the file inv
 
 | Check | Codes |
 |---|---|
-| Reads as XML with a `<robot>` root; no DOCTYPE or entity declarations; under 20 MB | S001, S002 |
+| Reads as XML with a `<robot>` root; no DOCTYPE or entity declarations; under 20 MB; at most 5000 links and at most 5000 joints | S001, S002 |
 | At least one link; unique link and joint names | S010 to S012 |
 | Every joint has a parent and a child, and both exist | S013, S014 |
 | One parent per link (no closed loop), exactly one root, every link reachable from it (no cycle) | S015 to S018 |
