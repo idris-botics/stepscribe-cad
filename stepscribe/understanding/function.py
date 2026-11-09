@@ -754,18 +754,31 @@ def design_summary(
     else:
         head = f"a mechanism with {len(model.joints)} joints ({topo.replace('_', ' ')})"
     support = _support(model, _headline_joints(model, topo, wheels, arm_joints, movers))
-    if many_unjointed(model):  # never state the degrees of freedom as fact
-        movers_txt = ", ".join(_joint_phrases(model, movers)) if 0 < len(movers) <= 4 else ""
-        head = unjointed_text(model) + (f" ({movers_txt})" if movers_txt else "")
     sentences = [f"Likely: {head} ({support})"]
+    if many_unjointed(model):  # counts only: the degrees of freedom are never stated as fact
+        sentences = [unjointed_text(model)]
     headline = _apply_headline(model, ctx, arm_joints if topo == "serial_chain" else [])
     listed = arm_joints or (movers if len(movers) <= 4 else [])
+    many = many_unjointed(model)
+
+    def joint_list(joints: list[KinJoint]) -> str:
+        phrases = _joint_phrases(model, joints)
+        if many:  # each joint is listed once, with its own confidence
+            phrases = [
+                f"{ph} (confidence {j.confidence:.2f})"
+                for ph, j in zip(phrases, joints, strict=True)
+            ]
+        return ", ".join(phrases)
+
     if headline is not None:
         sentences = [headline.text]
         if headline.is_arm and listed:
-            sentences[0] += ": " + ", ".join(_joint_phrases(model, listed))
+            sentences[0] += ": " + joint_list(listed)
+    elif many:
+        if 0 < len(movers) <= 4:
+            sentences[0] += ": " + joint_list(movers)
     elif listed:
-        sentences[0] += ": " + ", ".join(_joint_phrases(model, listed))
+        sentences[0] += ": " + joint_list(listed)
     for m in model.mechanisms:
         if m.kind == "lead_screw":
             lead = m.parameters.get("lead_mm")

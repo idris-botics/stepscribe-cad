@@ -51,15 +51,22 @@ def test_the_kinematics_description_gives_the_dof_as_a_lower_bound(many) -> None
     assert "estimated 2 degree" not in kin.description
 
 
-def test_the_confidence_is_capped_by_the_share_without_joints(many) -> None:  # type: ignore[no-untyped-def]
+def test_the_counts_carry_no_confidence_and_each_joint_is_listed_once_with_its_own(many) -> None:  # type: ignore[no-untyped-def]
+    kin = many.understanding.kinematics
+    text = many.understanding.summary
+    counts = unjointed_text(kin)
+    assert counts in text
+    assert "confidence" not in counts and not text.split(counts)[0].rstrip().endswith("(")
+    for j in kin.joints:
+        phrase = f"{j.id} {j.kind} about"
+        assert text.count(phrase) <= 1
+    if len(kin.joints) <= 4:
+        assert all(f"(confidence {j.confidence:.2f})" in text for j in kin.joints)
+
+
+def test_the_share_without_joints_still_caps_a_mechanism_type_guess_internally(many) -> None:  # type: ignore[no-untyped-def]
     kin = many.understanding.kinematics
     cap = round(1.0 - unjointed_share(kin), 2)
-    shown = [
-        float(w.split("confidence ")[1].split(";")[0])
-        for w in [many.understanding.summary]
-        if "confidence " in w
-    ]
-    assert shown and shown[0] <= cap + 1e-9
     if kin.headline_confidence is not None:
         assert kin.headline_confidence <= cap + 1e-9
 

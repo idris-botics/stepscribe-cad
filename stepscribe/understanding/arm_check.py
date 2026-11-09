@@ -171,9 +171,9 @@ def arm_headline(
     many = many_unjointed(model)
     if many:  # the groups with no joint evidence cap the claim
         conf = min(conf, round(1.0 - unjointed_share(model), 2))
-    said = f"{unjointed_text(model)}; " if many else ""
+    said = f"; {unjointed_text(model)}" if many else ""  # the counts stand outside the confidence
     text = (
-        f"Likely: {n}-axis serial arm ({said}confidence {conf:.2f}; evidence {', '.join(evidence)})"
+        f"Likely: {n}-axis serial arm (confidence {conf:.2f}; evidence {', '.join(evidence)}){said}"
     )
     ground_link = next(g for g in model.links if g.id == ground)
     chain = (
