@@ -24,6 +24,15 @@ def _role_text(label: str) -> str:
     return label.replace("_", " ")
 
 
+def from_name_only(role) -> bool:  # type: ignore[no-untyped-def]
+    """True when every piece of evidence for a role is the part's name: the role is then said to be from the name."""
+    return bool(role.evidence) and all(e.code.startswith("name:") for e in role.evidence)
+
+
+def _role_label(role) -> str:  # type: ignore[no-untyped-def]
+    return _role_text(role.label) + (" (from the name)" if from_name_only(role) else "")
+
+
 def understanding_sentences(part: Part) -> list[str]:
     """Role, process, structure, symmetry and mirror-pair sentences for a part paragraph."""
     u = part.understanding
@@ -32,7 +41,7 @@ def understanding_sentences(part: Part) -> list[str]:
     out: list[str] = []
     if u.roles and u.roles[0].label != "unknown" and u.roles[0].confidence >= 0.3:
         r = u.roles[0]
-        out.append(f"Likely: {_role_text(r.label)} ({r.confidence:.2f}).")
+        out.append(f"Likely: {_role_label(r)} ({r.confidence:.2f}).")
     if is_complex_guess(u.process):
         out.append(
             u.process.ranked[0].evidence[0].text[0].upper()
@@ -238,7 +247,7 @@ def understanding_markdown(report: Report) -> str:
         counts = Counter(f.kind for f in pu.structural_features)
         struct = ", ".join(f"{n} {kk}" for kk, n in sorted(counts.items()))
         lines.append(
-            f"| {p.id} | {_cell(p.name)} | {_role_text(r.label) if r else ''} | "
+            f"| {p.id} | {_cell(p.name)} | {_role_label(r) if r else ''} | "
             f"{f'{r.confidence:.2f}' if r else ''} | {_cell(ev)} | "
             f"{_process_cell(pu.process, proc)} | {struct} | "
             f"{_cell(pu.symmetry.description)} |"

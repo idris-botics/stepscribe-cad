@@ -18,7 +18,7 @@ from stepscribe import config
 from stepscribe.assembly.file_frames import FRAME_WARNING
 from stepscribe.models.schema import AnswerOption, Question, Report
 from stepscribe.understanding.arm_check import is_robot
-from stepscribe.understanding.process import is_complex_guess
+from stepscribe.understanding.process import is_complex_guess, rules
 
 MAX_QUESTIONS = 10
 GLOBAL_KINDS = ("purpose", "material", "process", "payload")
@@ -161,7 +161,8 @@ def generate_questions(
         if p.understanding
         and p.understanding.process.source != "user"
         and not is_complex_guess(p.understanding.process)  # nothing to confirm: no guess was made
-        and p.understanding.process.ranked[0].confidence < 0.7
+        and p.understanding.process.ranked[0].confidence
+        < float(rules()["guideline_min_confidence"])
     ]
     if weak:
         procs = Counter(p.understanding.process.ranked[0].label for p in weak if p.understanding)
@@ -546,6 +547,10 @@ def _rank(
             s *= 0.1  # a lower priority, permanently
         unsure = bool(a and a.get("status") == "not_sure")
         boost = 1000.0 if q.kind in GLOBAL_KINDS and not unsure else 0.0
+        if q.kind == "process" and not unsure:
+            boost = (
+                3000.0  # the process is the first question: it sets every guideline that follows
+            )
         if not unsure and robot and q.id in robot:
             boost = robot[q.id] - s  # the robot order replaces the value score entirely
         out.append((s + boost, q))

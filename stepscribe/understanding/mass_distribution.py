@@ -148,6 +148,12 @@ def payload_from_context(ctx: dict[str, Any]) -> tuple[Payload | None, str | Non
     return Payload(mass, np.array(offset)), None
 
 
+def step_material_ids(report: Report) -> list[str]:
+    """Parts whose mass uses the material the STEP file states: unverified, CAD tools often assign a default
+    material to every part."""
+    return sorted(p.id for p in report.parts if p.mass.material_source == "step_file")
+
+
 def _part_range_field(part: Part) -> dict[str, Any]:
     """``range`` of a computed part whose density is an assumption (a uniform scaling of its density)."""
     from stepscribe.understanding.mass_range import factors
@@ -245,6 +251,10 @@ def mass_distribution(report: Report) -> dict[str, Any]:
                 }
                 for g in report.understanding.kinematics.links
             ]
+    from_step = step_material_ids(report)
+    if from_step:
+        out["material_from_step_file"] = from_step
+
     given = sorted(
         p.id for p in report.parts if p.mass.designer_mass is not None and p.mass.designer_mass.used
     )
@@ -333,6 +343,11 @@ def mass_markdown(
         lines += _principal_lines(f"Link {link['id']}", link)
     for part in dist["parts"]:
         lines += _principal_lines(f"Part {part['id']}", part)
+    if dist.get("material_from_step_file"):
+        lines.append(
+            "- Material stated in the STEP file, not verified (CAD tools often assign a default material to every part, check it), used for the mass of: "
+            + ", ".join(dist["material_from_step_file"])
+        )
     if dist.get("density_guessed_from_name"):
         lines.append(
             "- Density assumed from the part name (a guess) for: "

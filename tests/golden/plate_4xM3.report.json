@@ -757,26 +757,9 @@
     "subassembly_roles": [],
     "questions": [
       {
-        "id": "Q2D42E4",
-        "kind": "purpose",
-        "priority": 1,
-        "text": "What is this design for? (one sentence)",
-        "refs": [],
-        "why": "The purpose decides the role of every part and what counts as a risk.",
-        "answer_type": "text",
-        "options": null,
-        "unit": null,
-        "default_guess": null,
-        "image": null,
-        "applies_to": [
-          "roles",
-          "summary"
-        ]
-      },
-      {
         "id": "QCB6F41",
         "kind": "process",
-        "priority": 2,
+        "priority": 1,
         "text": "How are the fabricated parts made? 1 of 1 look laser or waterjet but I am not sure.",
         "refs": [
           "PRT001"
@@ -819,6 +802,23 @@
         "applies_to": [
           "process",
           "weak_spots",
+          "summary"
+        ]
+      },
+      {
+        "id": "Q2D42E4",
+        "kind": "purpose",
+        "priority": 2,
+        "text": "What is this design for? (one sentence)",
+        "refs": [],
+        "why": "The purpose decides the role of every part and what counts as a risk.",
+        "answer_type": "text",
+        "options": null,
+        "unit": null,
+        "default_guess": null,
+        "image": null,
+        "applies_to": [
+          "roles",
           "summary"
         ]
       },

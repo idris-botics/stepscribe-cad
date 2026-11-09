@@ -879,12 +879,16 @@ def _params(src: dict[str, Any]) -> dict[str, Any]:
     up, front = src.get("up") or "+Z", src.get("front") or "-Y"
     if up not in AXES or front not in AXES:
         raise BadRequest("up and front must be one of " + ", ".join(AXES))
+    process = str(src.get("process") or "").strip().lower()
+    if process and process not in ("fdm", "sheet", "cnc", "unknown"):
+        raise BadRequest("process must be one of fdm, sheet, cnc, unknown")
     image_set = str(src.get("image_set") or "standard")
     if image_set not in IMAGE_SETS:
         raise BadRequest("image_set must be one of " + ", ".join(IMAGE_SETS))
     return {
         "material": material or None,
         "density": density,
+        "process": process or None,
         "up": up,
         "front": front,
         "images": flag("images", True),

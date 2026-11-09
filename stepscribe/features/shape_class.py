@@ -73,10 +73,12 @@ def _total_area(ctx: Ctx) -> float:
 
 
 # ------------------------------------------------------------------ individual rules
-def rule_gear(ctx: Ctx) -> ShapeClass | None:
-    """>= 8-fold rotational repetition of equal faces around one OBB axis."""
+def repeated_groups(ctx: Ctx):  # type: ignore[no-untyped-def]
+    """Groups of at least GEAR_MIN_TEETH equal faces that repeat at equal angular steps round one axis:
+    (face kind, area, members, mean step in degrees, outside radius of the part round that axis)."""
     faces = [f for f in ctx.part.table.faces if f.id not in ctx.hole_face_ids]
-    for axis in ctx.axes:
+    for k, axis in enumerate(ctx.axes):
+        outside = float(max(h for j, h in enumerate(ctx.half) if j != k))  # tip radius
         groups: dict[tuple[str, float, float], list] = {}  # type: ignore[type-arg]
         for f in faces:
             rel = f.centroid - ctx.centre
@@ -99,12 +101,69 @@ def rule_gear(ctx: Ctx) -> ShapeClass | None:
             ang = np.sort(np.degrees(np.arctan2(rel @ e2, rel @ e1)) % 360.0)
             gaps = np.diff(np.r_[ang, ang[0] + 360.0])
             if float(np.std(gaps)) < 1.0:
-                return ShapeClass(
-                    confidence=0.7,
-                    evidence=f"{len(members)} equal {kind} faces (area {area}) repeat every {gaps.mean():.1f}° around one axis",
-                    label="gear_like",
-                )
+                yield kind, area, members, float(gaps.mean()), outside
+
+
+def matches_standard_module(teeth: int, tip_radius_mm: float) -> float | None:
+    """The standard gear module (ISO 54, gears.yaml) that the outside diameter OD = m (N + 2) gives for
+    *teeth* teeth and the radius of their tips, or None when it fits none: a serration or spline, not a gear."""
+    from stepscribe.features.hole_standards import load_table
+
+    table = load_table("gears.yaml")
+    m = 2.0 * tip_radius_mm / (teeth + 2)
+    tol = float(table["module_snap_tolerance"])
+    for std in table["standard_modules_mm"]:
+        if abs(m - float(std)) / float(std) <= tol:
+            return float(std)
     return None
+
+
+def matches_belt_pitch(teeth: int, tip_radius_mm: float) -> str | None:
+    """The belt profile (belts.yaml) whose pitch circle a toothed pulley of *teeth* teeth and this tip radius
+    fits, else None: a toothed pulley is evidence of a belt drive, not of a gear module."""
+    import math
+
+    from stepscribe.understanding.mechanisms import (
+        PULLEY_OD_ABOVE_PITCH,
+        PULLEY_OD_BELOW_PITCH,
+        belts,
+    )
+
+    od = 2.0 * tip_radius_mm
+    for name, row in belts()["profiles"].items():
+        pd = teeth * float(row["pitch_mm"]) / math.pi
+        if pd - PULLEY_OD_BELOW_PITCH <= od <= pd + PULLEY_OD_ABOVE_PITCH:
+            return str(name)
+    return None
+
+
+def rule_gear(ctx: Ctx) -> ShapeClass | None:
+    """>= 8-fold rotational repetition of equal faces around one OBB axis.
+
+    A real gear's tips follow OD = m (N + 2) for a standard module m, a belt pulley's follow a belt pitch. Repeats
+    that fit neither are a serration or spline: they are not called a gear without that pitch evidence."""
+    for kind, area, members, step, tip in repeated_groups(ctx):
+        repeat = f"{len(members)} equal {kind} faces (area {area}) repeat every {step:.1f}° around one axis"
+        if (
+            matches_standard_module(len(members), tip) is None
+            and matches_belt_pitch(len(members), tip) is None
+        ):
+            m = 2.0 * tip / (len(members) + 2)
+            return ShapeClass(
+                confidence=0.7,
+                evidence=f"{repeat}; no standard gear module fits (m = {m:.2f} mm): a serration or "
+                "spline, not a gear",
+                label="serrated",
+            )
+        return ShapeClass(confidence=0.7, evidence=repeat, label="gear_like")
+    return None
+
+
+def tooth_face_ids(part: PartGeom, obb: OrientedBBox, holes: list[Hole]) -> set[str]:
+    """Faces of teeth, serrations or splines (equal repeats round an axis): not walls, not edges."""
+    hole_faces = {fid for h in holes for s in h.segments for fid in s.face_ids}
+    ctx = Ctx(part, obb, 0.0, 0.0, hole_faces, None)
+    return {m.id for _k, _a, members, _s, _t in repeated_groups(ctx) for m in members}
 
 
 def _signed_normal_angle(f, rel: np.ndarray, axis: np.ndarray) -> float:  # type: ignore[no-untyped-def]

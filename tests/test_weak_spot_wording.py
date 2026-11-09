@@ -46,14 +46,25 @@ def test_no_weak_spot_text_names_a_process_when_there_is_no_guess(analyses, name
         assert not hit, (name, wid, hit, text)
 
 
-def test_a_part_guessed_to_be_printed_still_says_printed_layers(analyses) -> None:  # type: ignore[no-untyped-def]
-    """The ribbed housing is guessed to be printed: the sentence about layers is true for it."""
+def test_a_part_guessed_to_be_printed_says_printed_layers_only_once_the_process_is_declared(
+    analyses, step_files
+) -> None:  # type: ignore[no-untyped-def]
+    """The ribbed housing is guessed to be printed, at a confidence below the guideline floor: the guess alone
+    gives no process-specific sentence; declared as FDM, the sentence about layers is said."""
+    from stepscribe.analysis import AnalyzeOptions
+    from stepscribe.api import analyze_full
+
     part = analyses("ribbed_housing").report.parts[0]
     assert part.understanding is not None
     assert part.understanding.process.ranked[0].label == "fdm_3d_printed"
     _u, found = texts(analyses("ribbed_housing"))
     corner = [t for _id, t in found if "sharp internal corner" in t]
-    assert corner and "printed layers" in corner[0]
+    assert corner and "printed layers" not in corner[0] and "process not declared" in corner[0]
+    opts = AnalyzeOptions(no_timestamp=True)
+    opts.extra["default_process"] = "fdm_3d_printed"
+    _u, found = texts(analyze_full(step_files["ribbed_housing"], opts))
+    corner = [t for _id, t in found if "sharp internal corner" in t]
+    assert corner and "printed layers" in corner[0] and "fdm 3d printed, declared" in corner[0]
 
 
 def test_a_part_the_designer_says_is_machined_does_not_split_printed_layers(

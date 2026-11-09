@@ -87,11 +87,15 @@ def test_short_screw_numbers(dense) -> None:  # type: ignore[no-untyped-def]
     assert "M3 x 14" in (w.suggestion or "")
 
 
-def test_thin_printed_bracket(analyses) -> None:  # type: ignore[no-untyped-def]
-    a = analyses("thin_printed_bracket")
+def test_thin_printed_bracket(step_files) -> None:  # type: ignore[no-untyped-def]
+    """The bracket is declared FDM: a guess below the guideline floor gives no process-specific guideline."""
+    opts = AnalyzeOptions(no_timestamp=True)
+    opts.extra["default_process"] = "fdm_3d_printed"
+    a = analyze_full(step_files["thin_printed_bracket"], opts)
     (wall,) = _spots(a, "thin_wall")
     assert wall.value == pytest.approx(0.6, abs=0.02) and wall.threshold == 0.8
-    assert "assumes fdm" in (wall.depends_on_assumption or "") and "formlabs" in wall.message
+    assert wall.depends_on_assumption is None and "formlabs" in wall.message
+    assert "[process: fdm 3d printed, declared]" in wall.message
     (edge,) = _spots(a, "edge_distance")
     assert edge.value == pytest.approx(1.0, abs=0.05) and edge.threshold == pytest.approx(8.0)
     bend = _spots(a, "unfilleted_bend")

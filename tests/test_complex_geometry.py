@@ -154,16 +154,24 @@ def edge_spots(analysis):  # type: ignore[no-untyped-def]
 def test_a_hole_near_the_edge_is_still_reported_on_a_complex_part(analyses) -> None:  # type: ignore[no-untyped-def]
     (spot,) = edge_spots(analyses("freeform_housing"))
     assert spot.value == pytest.approx(1.0, abs=0.01)  # the measured distance
-    assert "generic guideline (process unknown)" in spot.message
+    assert "the general rule of thumb (process not declared)" in spot.message
     assert "1.5 x diameter = 4.5 mm" in spot.message
-    assert spot.depends_on_assumption and "generic" in spot.depends_on_assumption
+    assert "[process: not declared; no process-specific guideline]" in spot.message
+    assert spot.depends_on_assumption and "process not declared" in spot.depends_on_assumption
 
 
-def test_the_same_hole_on_a_part_with_a_known_process_is_not_called_generic(analyses) -> None:  # type: ignore[no-untyped-def]
-    (spot,) = edge_spots(analyses("bossed_plate"))
+def test_the_same_hole_on_a_part_with_a_declared_process_names_it_and_its_source(
+    step_files,
+) -> None:  # type: ignore[no-untyped-def]
+    from stepscribe.analysis import AnalyzeOptions
+    from stepscribe.api import analyze_full
+
+    opts = AnalyzeOptions(no_timestamp=True)
+    opts.extra["default_process"] = "cnc_milled"
+    (spot,) = edge_spots(analyze_full(step_files["bossed_plate"], opts))
     assert spot.value == pytest.approx(1.0, abs=0.01)
-    assert "generic" not in spot.message
-    assert "the guideline is" in spot.message
+    assert "rule of thumb" not in spot.message and "process not declared" not in spot.message
+    assert "process: cnc milled" in spot.message
 
 
 def test_the_minimum_wall_rule_needs_a_process_so_it_stays_quiet(analyses) -> None:  # type: ignore[no-untyped-def]

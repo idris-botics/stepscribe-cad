@@ -167,7 +167,16 @@ def analyze_geom(
     pockets: list[Pocket] = _guarded("pocket detection", [], w, lambda: detect_pockets(geom, holes))
     wall = None
     if not opts.skip_wall_thickness:
-        wall = _guarded("wall thickness", None, w, lambda: sample_wall_thickness(geom))
+        from stepscribe.features.shape_class import tooth_face_ids
+
+        no_faces: set[str] = set()
+        left_out: set[str] = _guarded(
+            "tooth faces", no_faces, w, lambda: tooth_face_ids(geom, ob, holes)
+        )
+        left_out |= {fid for h in holes if h.thread is not None for fid in h.thread.face_ids}
+        wall = _guarded(
+            "wall thickness", None, w, lambda: sample_wall_thickness(geom, exclude=left_out)
+        )
     shape_class: ShapeClass = _guarded(
         "shape classification",
         ShapeClass(confidence=0.0, evidence="classification failed", label="other"),

@@ -57,6 +57,10 @@ kinematics:
     robot_min_joints: 3            # an arm with fewer joints is asked the ordinary questions
     static_confidence: 0.6         # HEURISTIC CONSTANT, not derived from evidence: "Likely: a static structure" claims that
                                    # no joint was found, an absence there is nothing to average over
+  unjointed:
+    # rigid groups that no joint touches: when there are many, the joint count is not the degrees of freedom
+    many_share: 0.25               # at least this share of the rigid groups ...
+    many_min_groups: 3             # ... and at least this many groups
   name_groups:
     min_numbered_groups: 3         # BASE does not count; LINK1..LINK3 or more
     confidence: 0.8
@@ -70,15 +74,17 @@ kinematics:
 part_roles:
   source: "heuristic weights chosen for this tool (not domain data); each is the evidence strength of one signal"
   confidence_k: 2.0          # confidence = score / (score + K): more independent evidence, higher, never 1.0
-  name_only_cap: 0.6         # a role supported only by the part's name never exceeds this confidence
+  name_only_cap: 0.35        # a role supported only by the part's name never exceeds this confidence (low: a name is a label)
+  holder_words: [holder, mount, bracket, plate, cover, case, housing, adapter]   # a part named with one of these ...
+  holder_blocks: [motor]     # ... can never get these roles from its name alone (a "servo holder" is not a servo)
   ambiguity_gap: 0.1         # top two roles closer than this are ambiguous (becomes a question)
 
   vocabulary:                # the brief's list plus roles for purchased parts the brief left out
     [chassis_frame, base_plate, motor_mount, bearing_housing, shaft_axle, wheel, hub, arm_link,
      joint_bracket, end_effector, gripper_finger, cover_enclosure, spacer_standoff, electronics_plate,
      battery_holder, sensor_mount, gear, pulley, belt_tensioner, linear_carriage, rail_or_guide_rod,
-     counterweight, cable_guide, fastener, generic_bracket, motor, bearing, linear_bearing, lead_screw,
-     unknown]
+     counterweight, cable_guide, fastener, generic_bracket, motor, servo_mount, bearing, linear_bearing,
+     lead_screw, unknown]
 
   shape:                     # shape class -> {role: weight}
     plate: {base_plate: 0.4, electronics_plate: 0.2, generic_bracket: 0.2}
@@ -107,6 +113,13 @@ part_roles:
     extrusion_profile: {chassis_frame: 1.0}
     standoff: {spacer_standoff: 1.0}
     belt_slot: {belt_tensioner: 0.6}
+
+  servo_pocket:              # a rectangular opening the size of a hobby servo body: geometry evidence for a servo mount
+    source: "typical outer sizes of common hobby servo bodies (micro servo about 22.5 x 12 mm, standard servo about 40.5 x 20 mm) plus up to 2.5 mm of clearance in the opening; a size range, not a product"
+    weight: 2.0
+    sizes:
+      - {label: "micro servo", width_mm: [11.5, 14.5], length_mm: [22.0, 25.5]}
+      - {label: "standard servo", width_mm: [19.0, 22.5], length_mm: [39.5, 43.5]}
 
   hardware:                  # purchased-hardware kind -> {role: weight}
     fastener: {fastener: 2.5}

@@ -19,6 +19,7 @@ import numpy as np
 
 from stepscribe.features.hole_standards import load_table
 from stepscribe.understanding.link_groups import numbered_groups
+from stepscribe.understanding.unjointed import many_unjointed, unjointed_share, unjointed_text
 
 if TYPE_CHECKING:
     from stepscribe.assembly.tree import InstanceData
@@ -167,10 +168,17 @@ def arm_headline(
     if n == 6:  # a mismatch still lowers a capped chain: it is subtracted after the cap
         conf -= float(cfg["per_mismatch"]) * misses
     conf = max(float(cfg["min_confidence"]), min(float(cfg["max_confidence"]), conf))
-    text = f"Likely: {n}-axis serial arm (confidence {conf:.2f}; evidence {', '.join(evidence)})"
+    many = many_unjointed(model)
+    if many:  # the groups with no joint evidence cap the claim
+        conf = min(conf, round(1.0 - unjointed_share(model), 2))
+    said = f"; {unjointed_text(model)}" if many else ""  # the counts stand outside the confidence
+    text = (
+        f"Likely: {n}-axis serial arm (confidence {conf:.2f}; evidence {', '.join(evidence)}){said}"
+    )
     ground_link = next(g for g in model.links if g.id == ground)
     chain = (
-        f"{len(order)} links and {n} revolute joints ({model.dof} degrees of freedom) in a serial "
+        f"{len(order)} links and {n} revolute joints ({model.dof} degrees of freedom"
+        f"{' from the joints found, at least' if many else ''}) in a serial "
         f"chain from ground link {ground} ({ground_link.description}); serial order confirmed: "
         + " -> ".join(order)
         + ", each joint's child link being the next joint's parent"

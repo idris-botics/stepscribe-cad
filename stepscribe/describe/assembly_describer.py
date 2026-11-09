@@ -72,6 +72,22 @@ def total_mass(report: Report) -> float | None:
     return None
 
 
+def partial_mass_text(report: Report) -> str | None:
+    """ "24 of 66 parts have a mass (896.8 g so far); 42 have no material ...", or None when none has one."""
+    known = [p for p in report.parts if p.mass.mass_g is not None]
+    if not known:
+        return None
+    sofar = sum(p.mass.mass_g or 0.0 for p in known)
+    text = (
+        f"{len(known)} of {len(report.parts)} parts have a mass ({fmt(sofar, 1)} g so far); "
+        f"{len(report.parts) - len(known)} have no material (pass --material, or set `material:` in "
+        "design_context.yaml; a part can be given its own under `parts:`)"
+    )
+    if any(p.mass.material_source == "step_file" for p in known):
+        text += "; the materials that are known are stated in the STEP file (CAD tools often assign a default material to every part, check it)"
+    return text
+
+
 def level0_context(
     report: Report,
     root_name: str,
@@ -107,6 +123,8 @@ def level0_context(
         "size": f"{fmt(w)} (width) × {fmt(d)} (depth) × {fmt(h)} (height) mm",
         "mass": f"{fmt(mass, 1)} g" if mass is not None else None,
         "mass_estimated": any(p.mass.material_source == "name_guess" for p in parts),
+        "mass_step_file": any(p.mass.material_source == "step_file" for p in parts),
+        "mass_partial": partial_mass_text(report) if mass is None else None,
         "com": (
             f"({fmt(report.assembly.center_of_mass.x)}, {fmt(report.assembly.center_of_mass.y)}, "
             f"{fmt(report.assembly.center_of_mass.z)})"

@@ -44,6 +44,12 @@ from stepscribe.understanding.kinematics import (
 )
 from stepscribe.understanding.ml_roles import RoleModel, load_role_models, role_scores
 from stepscribe.understanding.process import is_complex_guess
+from stepscribe.understanding.process import rules as process_rules
+from stepscribe.understanding.unjointed import (
+    many_unjointed,
+    unjointed_share,
+    unjointed_text,
+)
 
 if TYPE_CHECKING:
     from stepscribe.api import Analysis
@@ -80,6 +86,18 @@ def _has_word(text: str, word: str) -> bool:
     return re.search(r"(?<![a-z0-9])" + re.escape(word) + end, text) is not None
 
 
+def servo_pocket(part: Part, c: dict) -> tuple[str, str, float, float] | None:  # type: ignore[type-arg]
+    """(label, cut-out ID, width, length) of the first opening whose size fits a hobby servo body."""
+    for cut in part.cutouts:
+        for level in cut.levels[:1]:
+            w, length = sorted((level.width_mm, level.length_mm))
+            for size in c["servo_pocket"]["sizes"]:
+                (w0, w1), (l0, l1) = size["width_mm"], size["length_mm"]
+                if w0 <= w <= w1 and l0 <= length <= l1:
+                    return str(size["label"]), cut.id, w, length
+    return None
+
+
 def name_hits(names: list[str], keywords: dict[str, list[str]]) -> dict[str, str]:
     text = " ".join(names)
     text = re.sub(r"([a-z])([A-Z])", r"\1 \2", text).lower()
@@ -93,6 +111,16 @@ def name_hits(names: list[str], keywords: dict[str, list[str]]) -> dict[str, str
             if _has_word(text, word) or _has_word(text_split, word):
                 hits[role] = w
                 break
+    return hits
+
+
+def name_role_hits(names: list[str], c: dict) -> dict[str, str]:  # type: ignore[type-arg]
+    """Roles a name suggests. A holder word (holder, mount, bracket, plate, cover, case, housing, adapter)
+    means the part holds something: the roles in ``holder_blocks`` (motor) can never come from its name."""
+    hits = name_hits(names, c["name_keywords"])
+    if name_hits(names, {"holder": c["holder_words"]}):
+        for role in c["holder_blocks"]:
+            hits.pop(role, None)
     return hits
 
 
@@ -142,13 +170,34 @@ def part_score(part: Part, scorer: Scorer, c: dict) -> None:  # type: ignore[typ
             if any(w in g for w in FASTENER_WORDS)
             else None
         )
-        if kind in c["hardware"]:
+        if kind in c["hardware"] and "in the name" in part.hardware_guess:
+            # recognised from the name alone: the same low, labelled evidence as any other name hit
+            blocked = kind in c["holder_blocks"] and name_hits(
+                [part.name], {"holder": c["holder_words"]}
+            )
+            if not blocked:
+                scorer.add(
+                    {role: c["name_weight"] for role in c["hardware"][kind]},
+                    f"name:hardware:{kind}",
+                    [part.id],
+                    f"from the name: recognised as {part.hardware_guess}",
+                )
+        elif kind in c["hardware"]:
             scorer.add(
                 c["hardware"][kind],
                 f"hardware:{kind}",
                 [part.id],
                 f"recognised as {part.hardware_guess}",
             )
+    pocket = servo_pocket(part, c)
+    if pocket is not None:
+        label, cut_id, w, length = pocket
+        scorer.add(
+            {"servo_mount": float(c["servo_pocket"]["weight"])},
+            "geometry:servo_pocket",
+            [part.id, cut_id],
+            f"servo mount (likely): an opening of {w:.1f} x {length:.1f} mm matches a {label} body",
+        )
     u = part.understanding
     if u is not None:
         cut = [f for f in u.structural_features if f.kind == "lightening_cutout"]
@@ -361,12 +410,12 @@ def score_instances(
     _position_evidence(ctx, scorers, c, asm.up_axis)
     names = {i.id: [i.name, i.ap.part.name] for i in ctx.insts}
     for iid, nm in names.items():
-        for role, word in name_hits(nm, c["name_keywords"]).items():
+        for role, word in name_role_hits(nm, c).items():
             scorers[iid].add(
                 {role: c["name_weight"]},
                 f"name:{word}",
                 [iid],
-                f"the name '{nm[0]}' contains '{word}'",
+                f"from the name: '{nm[0]}' contains '{word}'",
             )
     return scorers
 
@@ -494,12 +543,12 @@ def assign_single_part_roles(analysis: Analysis) -> None:
             continue
         s = Scorer()
         part_score(ap.part, s, c)
-        for role, word in name_hits([ap.part.name], c["name_keywords"]).items():
+        for role, word in name_role_hits([ap.part.name], c).items():
             s.add(
                 {role: c["name_weight"]},
                 f"name:{word}",
                 [ap.part.id],
-                f"the name '{ap.part.name}' contains '{word}'",
+                f"from the name: '{ap.part.name}' contains '{word}'",
             )
         ap.part.understanding.roles = _top(s, c)
 
@@ -706,14 +755,30 @@ def design_summary(
         head = f"a mechanism with {len(model.joints)} joints ({topo.replace('_', ' ')})"
     support = _support(model, _headline_joints(model, topo, wheels, arm_joints, movers))
     sentences = [f"Likely: {head} ({support})"]
+    if many_unjointed(model):  # counts only: the degrees of freedom are never stated as fact
+        sentences = [unjointed_text(model)]
     headline = _apply_headline(model, ctx, arm_joints if topo == "serial_chain" else [])
     listed = arm_joints or (movers if len(movers) <= 4 else [])
+    many = many_unjointed(model)
+
+    def joint_list(joints: list[KinJoint]) -> str:
+        phrases = _joint_phrases(model, joints)
+        if many:  # each joint is listed once, with its own confidence
+            phrases = [
+                f"{ph} (confidence {j.confidence:.2f})"
+                for ph, j in zip(phrases, joints, strict=True)
+            ]
+        return ", ".join(phrases)
+
     if headline is not None:
         sentences = [headline.text]
         if headline.is_arm and listed:
-            sentences[0] += ": " + ", ".join(_joint_phrases(model, listed))
+            sentences[0] += ": " + joint_list(listed)
+    elif many:
+        if 0 < len(movers) <= 4:
+            sentences[0] += ": " + joint_list(movers)
     elif listed:
-        sentences[0] += ": " + ", ".join(_joint_phrases(model, listed))
+        sentences[0] += ": " + joint_list(listed)
     for m in model.mechanisms:
         if m.kind == "lead_screw":
             lead = m.parameters.get("lead_mm")
@@ -735,6 +800,22 @@ def design_summary(
         else:
             sentences.append(
                 f"Fabricated parts are a mix, mostly {label.replace('_', ' ')} ({n} of {len(fab)})"
+            )
+        floor = float(process_rules()["guideline_min_confidence"])
+        weak = [
+            p.understanding.process.ranked[0].confidence
+            for p in fab
+            if p.understanding
+            and p.understanding.process.source != "user"
+            and p.understanding.process.ranked[0].label == label
+            and p.understanding.process.ranked[0].confidence < floor
+        ]
+        if weak:  # a guess below the floor is said to be one, and no guideline follows from it
+            lo, hi = f"{min(weak):.2f}", f"{max(weak):.2f}"
+            span = lo if lo == hi else f"{lo} to {hi}"
+            sentences[-1] += (
+                f" (a guess, confidence {span}: the process is not declared, so no "
+                "process-specific guideline is used)"
             )
     complex_parts = [
         p for p in fab if p.understanding and is_complex_guess(p.understanding.process)
@@ -798,6 +879,8 @@ def _support(model: KinematicModel, joints: list[KinJoint]) -> str:
     mean = sum(j.confidence for j in joints) / len(joints)
     cap = min(j.confidence for j in joints) + float(cfg["weakest_joint_headroom"])
     conf = max(float(cfg["min_confidence"]), min(float(cfg["max_confidence"]), mean, cap))
+    if many_unjointed(model):  # the share of groups with no joint evidence caps what can be claimed
+        conf = min(conf, round(1.0 - unjointed_share(model), 2))
     return f"confidence {conf:.2f}; evidence {id_range([j.id for j in joints])}, {links}"
 
 
@@ -833,6 +916,8 @@ def _apply_headline(
     if hl is None:
         return None
     model.headline, model.headline_confidence = hl.text, hl.confidence
+    if hl.confidence is not None and many_unjointed(model):
+        model.headline_confidence = min(hl.confidence, round(1.0 - unjointed_share(model), 2))
     model.headline_evidence, model.statement = hl.evidence, hl.statement
     model.axis_pattern = hl.axis_pattern
     if hl.is_arm:  # the statement already says everything the plain description said

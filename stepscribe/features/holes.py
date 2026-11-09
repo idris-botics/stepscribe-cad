@@ -693,6 +693,8 @@ def _edge_measures(
     }
     measured = (mine - tip) or mine
     skip = adjacent | _own_entry_faces(part, h, mine, adjacent, all_hole_idx)
+    if h.thread is not None:  # a modelled thread's flanks are the thread, not an edge
+        skip |= {int(fid[1:]) - 1 for fid in h.thread.face_ids}
     outer = [
         table.faces[i].face
         for i in range(len(table.faces))
@@ -787,5 +789,9 @@ def detect_holes(part: PartGeom) -> list[Hole]:
             if h is not None:
                 holes.append(h)
     holes = assign_ids(holes)
+    from stepscribe.features.threads import detect_threads
+
+    for hole_id, thread in detect_threads(part, holes).items():
+        next(h for h in holes if h.id == hole_id).thread = thread
     compute_edge_distances(part, holes)
     return holes

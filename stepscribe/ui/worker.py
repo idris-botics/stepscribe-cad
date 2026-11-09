@@ -18,7 +18,7 @@ def job_options(job: dict[str, Any]) -> Any:
     """The AnalyzeOptions a UI job runs with (imports lazily: the page server never loads OCC)."""
     from stepscribe.analysis import AnalyzeOptions
 
-    return AnalyzeOptions(
+    opts = AnalyzeOptions(
         material=job.get("material") or None,
         density=job.get("density"),
         up=job.get("up", "+Z"),
@@ -26,6 +26,15 @@ def job_options(job: dict[str, Any]) -> Any:
         check_interference=bool(job.get("interference")),
         no_timestamp=True,
     )
+    if job.get(
+        "process"
+    ):  # the page's selector: fdm, sheet, cnc or unknown (checked by the server)
+        from stepscribe.understanding.process import declared_process
+
+        label = declared_process(str(job["process"]))
+        if label is not None:
+            opts.extra["default_process"] = label
+    return opts
 
 
 def job_inputs(
