@@ -74,6 +74,12 @@ def servo_holder(with_pocket: bool) -> Shape:
     return plate - Box(23, 12.5, 6) if with_pocket else plate
 
 
+def clearance_holder() -> Shape:
+    """A 50 x 30 x 4 mm plate with a 24.7 x 13.2 mm through pocket: a micro servo body (22.5 x 12 mm) with
+    clearance, the size of the opening in the dog's main servo holder."""
+    return Box(50, 30, 4) - Box(24.7, 13.2, 6)
+
+
 def named_parts(out: Path) -> Path:
     """An assembly of three plates named like the dog's: a servo holder with no pocket, a holder with a
     servo-sized pocket, and a connector plate named after a servo model; plus the threaded axe."""
@@ -81,6 +87,7 @@ def named_parts(out: Path) -> Path:
         "main servo holder": servo_holder(False),
         "servo bracket pocket": servo_holder(True),
         "mg90 connector hole": Box(20, 10, 3),
+        "clearance holder": clearance_holder(),
         "axe": threaded_axe(),
         "frame plate": Box(60, 60, 4) - Box(30, 30, 6),
     }
@@ -90,6 +97,7 @@ def named_parts(out: Path) -> Path:
             Node("Holder", "main servo holder", Location()),
             Node("Pocket", "servo bracket pocket", Pos(60, 0, 0)),
             Node("Connector", "mg90 connector hole", Pos(0, 60, 0)),
+            Node("Clearance", "clearance holder", Pos(0, -60, 0)),
             Node("Axe", "axe", Pos(60, 60, 0)),
             Node("Frame", "frame plate", Pos(-60, 0, 0)),
         ],

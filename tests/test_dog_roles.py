@@ -88,6 +88,29 @@ def test_a_servo_sized_opening_gives_servo_mount_likely_from_geometry(
     assert 0.3 < mount.confidence < 0.75
 
 
+def test_an_opening_with_clearance_round_a_servo_body_still_gives_servo_mount(
+    parts: dict[str, Any],
+) -> None:
+    """The dog's main servo holder has a 24.7 x 13.2 mm opening: a micro servo (22.5 x 12 mm) plus clearance."""
+    got = roles(parts["clearance holder"])
+    assert "servo_mount" in got and "motor" not in got
+    assert any(
+        "13.2 x 24.7 mm matches a micro servo" in e.text for e in got["servo_mount"].evidence
+    )
+
+
+def test_a_role_from_the_name_alone_says_so_where_it_is_printed(parts: dict[str, Any]) -> None:
+    from stepscribe.understanding.describe import _role_label, understanding_sentences
+
+    part = parts["mg90 connector hole"]
+    top = part.understanding.roles[0]
+    assert top.label == "motor"  # a servo model in the name; no holder word
+    assert _role_label(top) == "motor (from the name)"
+    assert any("from the name" in s for s in understanding_sentences(part))
+    geometric = parts["servo bracket pocket"].understanding.roles[0]
+    assert "(from the name)" not in _role_label(geometric)
+
+
 def test_an_opening_of_another_size_gives_no_servo_mount(parts: dict[str, Any]) -> None:
     assert "servo_mount" not in roles(parts["frame plate"])
     assert "servo_mount" not in roles(parts["main servo holder"])

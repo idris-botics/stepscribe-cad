@@ -115,11 +115,11 @@ part_roles:
     belt_slot: {belt_tensioner: 0.6}
 
   servo_pocket:              # a rectangular opening the size of a hobby servo body: geometry evidence for a servo mount
-    source: "typical outer sizes of common hobby servo bodies (micro servo about 22.5 x 12 mm, standard servo about 40.5 x 20 mm); a size range, not a product"
+    source: "typical outer sizes of common hobby servo bodies (micro servo about 22.5 x 12 mm, standard servo about 40.5 x 20 mm) plus up to 2.5 mm of clearance in the opening; a size range, not a product"
     weight: 2.0
     sizes:
-      - {label: "micro servo", width_mm: [11.5, 13.5], length_mm: [22.0, 24.5]}
-      - {label: "standard servo", width_mm: [19.0, 21.5], length_mm: [39.5, 42.5]}
+      - {label: "micro servo", width_mm: [11.5, 14.5], length_mm: [22.0, 25.5]}
+      - {label: "standard servo", width_mm: [19.0, 22.5], length_mm: [39.5, 43.5]}
 
   hardware:                  # purchased-hardware kind -> {role: weight}
     fastener: {fastener: 2.5}
