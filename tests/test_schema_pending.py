@@ -34,7 +34,7 @@ def test_what_this_pull_request_adds_is_in_the_schema_and_is_optional() -> None:
 
 
 def test_the_document_lists_the_fields_the_other_pull_requests_add() -> None:
-    for item in ("Mass.designer_mass", "designer_mass", "Mass.density_range"):
+    for item in ("MassProperties.designer_mass", "designer_mass", "MassProperties.density_range"):
         assert item in DOC
     assert re.search(r"#24", DOC) and re.search(r"#25", DOC)
 
@@ -42,7 +42,7 @@ def test_the_document_lists_the_fields_the_other_pull_requests_add() -> None:
 def test_what_24_and_25_added_is_in_the_schema_too() -> None:
     defs = SCHEMA["$defs"]
     assert "DesignerMass" in defs and "DensityRange" in defs
-    mass = defs["Mass"]["properties"]
+    mass = defs["MassProperties"]["properties"]
     assert "designer_mass" in mass and "density_range" in mass
     assert "designer_mass" in json.dumps(mass["material_source"])
-    assert "designer_mass" not in defs["Mass"].get("required", [])
+    assert "designer_mass" not in defs["MassProperties"].get("required", [])

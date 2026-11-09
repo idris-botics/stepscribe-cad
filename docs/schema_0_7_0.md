@@ -18,7 +18,7 @@ The bump commit must cover every line below and change the status line above to 
 
 ## Added by #24 and #25 (merged; checked by the test)
 
-- `Mass.designer_mass`: a `DesignerMass` (given, used, estimated, note, ratio note), absent unless the designer
+- `MassProperties.designer_mass`: a `DesignerMass` (given, used, estimated, note, ratio note), absent unless the designer
   gave a mass for the part (#24).
-- `Mass.material_source`: the value `designer_mass` (#24).
-- `Mass.density_range`: a `DensityRange` (minimum, maximum, reason), present where the density is an assumption (#25).
+- `MassProperties.material_source`: the value `designer_mass` (#24).
+- `MassProperties.density_range`: a `DensityRange` (minimum, maximum, reason), present where the density is an assumption (#25).
