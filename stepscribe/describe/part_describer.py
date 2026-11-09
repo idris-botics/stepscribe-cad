@@ -32,6 +32,8 @@ def shape_label(sc: ShapeClass) -> str:
 def material_text(part: Part) -> str:
     """Material sentence fragment."""
     m = part.mass
+    if m.material_source == "designer_mass":
+        return "density derived from the mass given by the designer"
     if m.material_assumed and m.material_source == "user":
         return f"material {m.material_assumed} (given)"
     if m.material_assumed and m.material_source == "step_file":
@@ -101,9 +103,14 @@ def step_lines(part: Part) -> list[str]:
 
 def mass_text(part: Part) -> str:
     """Mass fragment."""
+    dm = part.mass.designer_mass
+    if dm is not None and dm.used and part.mass.mass_g is not None:
+        extra = f"; {dm.ratio_note}" if dm.ratio_note else ""
+        return f"{fmt(part.mass.mass_g, 1)} g (mass from designer{extra})"
+    note = f"; {dm.note}" if dm is not None else ""
     if part.mass.mass_g is not None:
-        return f"{fmt(part.mass.mass_g, 1)} g ({material_text(part)})"
-    return "unknown (no material given)"
+        return f"{fmt(part.mass.mass_g, 1)} g ({material_text(part)}{note})"
+    return f"unknown (no material given{note})"
 
 
 def group_by_size(items: list[Any], key: str) -> list[tuple[float, int]]:

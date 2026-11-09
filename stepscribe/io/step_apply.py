@@ -22,6 +22,7 @@ from OCP.TopExp import TopExp_Explorer
 from OCP.TopoDS import TopoDS, TopoDS_Face, TopoDS_Shape
 
 from stepscribe.analysis import AnalyzeOptions
+from stepscribe.geometry.designer_mass import rebuild_mass
 from stepscribe.geometry.occ_utils import to_np
 from stepscribe.geometry.part_geom import PartGeom
 from stepscribe.geometry.properties import guess_density, mass_properties
@@ -87,7 +88,12 @@ def use_material(part: Part, geom: PartGeom, mat: StepMaterial, opts: AnalyzeOpt
         density = guess[0] if guess else None
     if density is None:
         return  # nothing usable: behaviour stays as it was
-    part.mass = mass_properties(geom.shape, geom.name, density, mat.name, "step_file")
+    given = part.mass.designer_mass
+    if given is not None and given.used:
+        return  # a mass the designer gave outranks the file's material
+    part.mass = rebuild_mass(
+        part.mass, mass_properties(geom.shape, geom.name, density, mat.name, "step_file")
+    )
     mat.density_used = True
 
 

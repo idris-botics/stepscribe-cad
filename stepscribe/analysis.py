@@ -186,6 +186,11 @@ def analyze_geom(
         min_wall_thickness_mm=wall[0] if wall else None,
         warnings=[*geom.warnings, *w],
     )
+    given = opts.extra.get("part_masses", {}).get(geom.name)
+    if given is not None:
+        from stepscribe.geometry.designer_mass import apply_designer_mass
+
+        apply_designer_mass(part, shape, given)
     no_cutouts: tuple[list[Cutout], list[CutoutPattern]] = ([], [])
     part.cutouts, part.cutout_patterns = _guarded(
         "cutout detection", no_cutouts, part.warnings, lambda: detect_cutouts(geom, part)

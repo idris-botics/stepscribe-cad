@@ -224,6 +224,8 @@ def apply_material(analysis: Any, material: str) -> None:
     density = config.MATERIAL_KEYWORDS[material]
     for ap in analysis.parts:
         m = ap.part.mass
+        if m.designer_mass is not None and m.designer_mass.used:
+            continue  # the designer's own mass for this part stays
         m.density_g_cm3 = density
         m.mass_g = m.volume_mm3 * 1e-3 * density
         m.material_assumed = material

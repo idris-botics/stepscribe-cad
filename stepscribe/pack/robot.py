@@ -17,12 +17,14 @@ from typing import Any
 import numpy as np
 
 from stepscribe.assembly.file_frames import frame_hedge
+from stepscribe.geometry.designer_mass import LABEL as DESIGNER_LABEL
 from stepscribe.models.schema import AxisLabel, KinJoint, Part, Report
 from stepscribe.understanding.mass_distribution import (
     ASSUMPTIONS,
     down_label,
     gravity_note,
     link_body,
+    link_designer_parts,
     principal_dict,
 )
 from stepscribe.understanding.process import complex_geometry_reason
@@ -206,6 +208,10 @@ def build_robot(report: Report, payload: Payload | None = None) -> dict[str, Any
         row.update(_link_mass(report, g.instance_ids))
         row["mass_is_estimate"] = True
         row["principal_inertia"] = principal_dict(link_body(report, g.instance_ids))
+        given = link_designer_parts(report, g.instance_ids)
+        if given:  # absent unless the designer gave a mass for one of the link's parts
+            row["mass_from_designer_parts"] = given
+            row["mass_label"] = DESIGNER_LABEL
         low = sorted(
             {
                 parts[inst_part[i]].name
@@ -290,6 +296,15 @@ def build_robot(report: Report, payload: Payload | None = None) -> dict[str, Any
             "No material is set, so link masses, centres of mass and inertias are unknown: pass "
             "--material or set `material:` in design_context.yaml.",
         )
+    given_parts = sorted(
+        {pid for link in links for pid in link.get("mass_from_designer_parts", [])}
+    )
+    if given_parts:
+        warnings.append(f"{DESIGNER_LABEL.capitalize()}: " + ", ".join(given_parts) + ".")
+    for p in report.parts:
+        dm = p.mass.designer_mass
+        if dm is not None and not dm.used:
+            warnings.append(f"{p.id}: {dm.note}")
     if complex_bodies:
         warnings.append(
             "These bodies have complex or free-form geometry, so their volume may not be that of a real "

@@ -133,6 +133,8 @@ def build_urdf(robot: dict[str, Any] | None, meshes: dict[str, LinkMeshes] | Non
     for link in robot["links"]:
         names = ", ".join(i["name"] for i in link["instances"])
         out.append(f"  <!-- {_c(link['id'])}: {_c(names)} -->")
+        if link.get("mass_label"):  # only when the designer gave a mass for one of its parts
+            out.append(f"  <!-- {_c(link['id'])}: {_c(link['mass_label'])} -->")
         out.append(f"  <link name={quoteattr(link['id'])}>")
         if link["mass_g"] is not None:
             if not wrote_note:
