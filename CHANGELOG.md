@@ -1,5 +1,27 @@
 # Changelog
 
+## 2.0.1 (TBD)
+
+Fixes to 2.0.0 only. The report schema stays 0.6.0; nothing else about the output changes.
+
+- **A model with rigid groups that no joint reaches no longer stops the run.** `robot.urdf` is one tree, so a
+  group the tree does not reach (a loose part, a second chain) used to raise `KeyError: 'L2'` while the pack was
+  written, and the run stopped with a traceback. The URDF now carries only the groups and joints the tree reaches,
+  `robot.json` lists the unconnected groups, and `validate-robot` reports them (S055, information).
+- **One image that cannot be drawn no longer stops the run.** An image that fails (a shape the renderer cannot
+  draw, a failed off-screen render) is skipped with its reason in the pack and the remaining images are still
+  made. A failure in the pack's own files still stops the run, with a message that says what was saved.
+- **The image count is exact.** The progress counter ("rendered x (n/N)") ends at N: the renderer plans the images
+  it will make or skip before it starts, and a skipped image still counts.
+- **The remaining-time estimate is a range, not a number to the second.** It says "estimating..." until two parts
+  are done, then "about N to M minutes" in whole minutes; the range does not rise within a stage, it is never
+  negative, and it says "taking longer than expected" or "almost done" when that is the case. The page and the
+  command line use the same function (`stepscribe/eta.py`); `scripts/eta_replay.py` replays a recorded run
+  through it. The stages after the parts use a rough prior from recorded stage times until their own speed is
+  known; it is an estimate, not a promise.
+- **The failure message says what happened.** A stopped run names the stage, says what was saved and where the
+  full details (the traceback) are.
+
 ## 2.0.0 (2026-11-06)
 
 This release is compared with **0.1.4**, the last release: it is on PyPI (`pip index versions stepscribe-cad` lists 0.1.0 to 0.1.4, so nothing was published since) and tagged `v0.1.4`.

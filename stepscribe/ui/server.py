@@ -85,6 +85,7 @@ class JobState:
     message: str = "starting"
     fraction: float = 0.0
     eta_s: float | None = None
+    eta_text: str = "estimating..."
     error_log: str | None = None  # the file with the full traceback
     error_saved: str | None = None  # what the stopped run did and did not save
     elapsed_s: float = 0.0
@@ -207,11 +208,13 @@ class App:
                 if kind == "progress":
                     state.stage, state.message = msg["stage"], msg["message"]
                     state.fraction, state.eta_s = msg["fraction"], msg["eta_s"]
+                    state.eta_text = msg.get("eta_text", "estimating...")
                     state.elapsed_s = msg["elapsed_s"]
                 elif kind == "done":
                     state.pack = msg["pack"]
                     state.result = summarise_pack(Path(msg["pack"]))
                     state.fraction, state.eta_s, state.stage = 1.0, 0.0, "done"
+                    state.eta_text = "done"
                     state.message = f"finished in {msg['seconds']} s"
                     state.done = True
                 elif kind == "error":
@@ -581,6 +584,7 @@ def make_handler(app: App) -> type[BaseHTTPRequestHandler]:
                     "message": s.message,
                     "fraction": s.fraction,
                     "eta_s": s.eta_s,
+                    "eta_text": s.eta_text,
                     "elapsed_s": s.elapsed_s or time.time() - s.started,
                     "done": s.done,
                     "error": s.error,

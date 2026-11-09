@@ -372,7 +372,7 @@ def render_pack_images(
         failures.append(("images/assembly_*.png", image_reason(exc)))
     plan = plan_images(analysis, image_set, has_scene=bool(items))
     if tracker is not None:
-        tracker.plan_images(plan.total)
+        tracker.plan_images(plan.total, image_set)
     written: list[str] = []
     if items:
         (folder / "images").mkdir(parents=True, exist_ok=True)

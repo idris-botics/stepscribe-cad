@@ -70,6 +70,7 @@ def run_job(job: dict[str, Any], queue: Any, cmd_q: Any = None, reply_q: Any = N
                 "fraction": p.fraction,
                 "elapsed_s": p.elapsed_s,
                 "eta_s": p.eta_s,
+                "eta_text": p.eta_text,
             }
         )
 
@@ -85,6 +86,7 @@ def run_job(job: dict[str, Any], queue: Any, cmd_q: Any = None, reply_q: Any = N
             apply_context(opts, ctx)
         tracker = Tracker(push)
         tracker.images_wanted = bool(job.get("images", True))
+        tracker.image_set = str(job.get("image_set") or DEFAULT_IMAGE_SET)
         target, combined_name = job_inputs(job, work)
         analysis = analyze_full(target, opts, tracker, combined_name)
         if not analysis.parts:

@@ -77,6 +77,7 @@ def process_file(job: Job, callback: ProgressFn | None = None) -> dict[str, Any]
             apply_context(opts, ctx)
         tracker = Tracker(callback)
         tracker.images_wanted = job.images and job.mode == "pack"
+        tracker.image_set = str(job.export.get("image_set", "basic"))
         if job.mode == "export":
             return _export_file(job, opts, tracker, start)
         analysis = analyze_full(job.paths if job.paths else job.path, opts, tracker, job.name)
