@@ -51,6 +51,7 @@ def _worker(spec: dict[str, Any], queue: Any) -> None:
                 "fraction": p.fraction,
                 "elapsed_s": p.elapsed_s,
                 "eta_s": p.eta_s,
+                "eta_text": p.eta_text,
             }
         )
 

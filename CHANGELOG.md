@@ -19,6 +19,26 @@ Nothing here is released. The report schema stays 0.6.0; every new field is opti
 - **Agreement between two methods on generated shapes.** `scripts/check_inertia.py` and `tests/test_inertia_agreement.py` compare our mass, centre of mass and principal moments with a signed-tetrahedra integral of a fine tessellation (numpy only) on generated boxes, cylinders, spheres and shapes with cut holes, rotated and offset. A short subset runs in the normal suite and the full set is marked slow. It shows that two methods agree on those shapes; it is not a statement about real parts. The tolerance and its reasoning are in `docs/mass_distribution.md`.
 - **`stepscribe compare-robot <pack | report.json | robot.json> <existing.urdf>`** compares our estimates with a URDF's `<inertial>` values: the mass ratio and the ratios of the sorted principal moments per link, matched by order from the base for a serial chain with the same number of links (`--map` overrides, otherwise it says so and stops). Link names are anonymised by default (`--with-names` shows them), `--com` adds the centre-of-mass distance at the zero pose, and `--json` gives the same content as data. It prints a note that the ratios are a comparison, not a verdict, and gives no pass or fail. See `docs/compare_robot.md`.
 
+### Fixes to 2.0.0 (there is no separate 2.0.1; these ship in 2.1)
+
+- **A model with rigid groups that no joint reaches no longer stops the run.** `robot.urdf` is one tree, so a
+  group the tree does not reach (a loose part, a second chain) used to raise `KeyError: 'L2'` while the pack was
+  written, and the run stopped with a traceback. The URDF now carries only the groups and joints the tree reaches,
+  `robot.json` lists the unconnected groups, and `validate-robot` reports them (S055, information).
+- **One image that cannot be drawn no longer stops the run.** An image that fails (a shape the renderer cannot
+  draw, a failed off-screen render) is skipped with its reason in the pack and the remaining images are still
+  made. A failure in the pack's own files still stops the run, with a message that says what was saved.
+- **The image count is exact.** The progress counter ("rendered x (n/N)") ends at N: the renderer plans the images
+  it will make or skip before it starts, and a skipped image still counts.
+- **The remaining-time estimate is a range, not a number to the second.** It says "estimating..." until two parts
+  are done, then "about N to M minutes" in whole minutes; the range does not rise within a stage, it is never
+  negative, and it says "taking longer than expected" or "almost done" when that is the case. The page and the
+  command line use the same function (`stepscribe/eta.py`); `scripts/eta_replay.py` replays a recorded run
+  through it. The stages after the parts use a rough prior from recorded stage times until their own speed is
+  known; it is an estimate, not a promise.
+- **The failure message says what happened.** A stopped run names the stage, says what was saved and where the
+  full details (the traceback) are.
+
 ## 2.0.0 (2026-11-06)
 
 This release is compared with **0.1.4**, the last release: it is on PyPI (`pip index versions stepscribe-cad` lists 0.1.0 to 0.1.4, so nothing was published since) and tagged `v0.1.4`.

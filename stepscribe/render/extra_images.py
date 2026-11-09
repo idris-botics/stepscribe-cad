@@ -44,6 +44,7 @@ from stepscribe.render.tessellate import tessellate
 if TYPE_CHECKING:
     from stepscribe.api import Analysis
     from stepscribe.progress import Tracker
+    from stepscribe.render.plan import ImagePlan
 
 IMAGE_SETS = ("none", "basic", "standard", "full")
 DEFAULT_MAX_SIDE = limits.IMAGE_MAX_SIDE
@@ -383,45 +384,60 @@ def render_extra_images(
     up: str,
     front: str,
     tracker: Tracker | None = None,
+    plan: ImagePlan | None = None,
+    failures: list[tuple[str, str]] | None = None,
 ) -> ExtraResult:
-    """Write the extra images of *image_set* under ``images/parts`` and ``images/INDEX.md``."""
+    """Write the extra images of *image_set* under ``images/parts`` and ``images/INDEX.md``.
+
+    Each image type has as many planned slots as the plan says (the caps are applied there). A slot ends as
+    a drawn image or as a skipped one, so the progress counter ends at the planned total. A part that
+    gives nothing to draw is replaced by the next one, as before. A failing image is recorded in the index
+    and in *failures* and the rest is still drawn."""
     from stepscribe.describe.budget import rank_parts
+    from stepscribe.render import image_reason
+    from stepscribe.render.plan import ASSEMBLY_TYPE_FILES, eligible_parts, plan_images
 
     result = ExtraResult()
     kinds = types_for(image_set)
     if not kinds and not assembly_types_for(image_set):
         return result
     report = analysis.report
+    if plan is None:
+        plan = plan_images(analysis, image_set)
+    failed: list[tuple[str, str]] = failures if failures is not None else []
+    for rel, why in failed:  # what the earlier images already could not do
+        result.notes.append(f"{Path(rel).name}: not drawn ({why})")
     by_id = {ap.part.id: ap for ap in analysis.parts}
     out_dir = folder / "images" / "parts"
     out_dir.mkdir(parents=True, exist_ok=True)
     ranked = rank_parts([ap.part for ap in analysis.parts])
     t_last = time.time()
+
+    def skip(rel: str, reason: str) -> None:
+        if tracker is not None:
+            tracker.image_skipped(Path(rel).name, reason)
+
     for kind in kinds:
+        slots = plan.extra.get(kind, [])
         done = 0
         empty: list[str] = []
-        for part in ranked:
+        pool = eligible_parts(kind, ranked, by_id, report)
+        last_rank = len(ranked)  # how far down the ranking the loop looked
+        order = {p.id: i for i, p in enumerate(ranked)}
+        for part in pool:
+            if done >= len(slots):
+                last_rank = order[part.id]
+                break
             ap = by_id[part.id]
-            if done >= MAX_PARTS_PER_TYPE:
-                result.notes.append(
-                    f"{KINDS[kind]}: only the {MAX_PARTS_PER_TYPE} most important parts are drawn"
-                )
-                break
-            if len(result.files) >= MAX_EXTRA_IMAGES:
-                result.notes.append(f"{KINDS[kind]}: stopped at {MAX_EXTRA_IMAGES} extra images")
-                break
-            if len(ap.geom.table.faces) > MAX_FACES:
-                result.notes.append(
-                    f"{KINDS[kind]} {part.id}: not drawn, more than {MAX_FACES} faces"
-                )
-                continue
             try:
                 image = _make(kind, part, ap.geom, report, up, front, max_side, result.notes)
-            except ImageSkipped as skip:
-                result.notes.append(f"{KINDS[kind]} {part.id}: not drawn, {skip}")
+            except ImageSkipped as skip_reason:
+                result.notes.append(f"{KINDS[kind]} {part.id}: not drawn, {skip_reason}")
                 continue
             except Exception as exc:  # noqa: BLE001 - a picture must never stop the pack
-                result.notes.append(f"{KINDS[kind]} {part.id}: not drawn ({type(exc).__name__})")
+                rel = f"images/parts/{part.id}_{kind}.png"
+                result.notes.append(f"{KINDS[kind]} {part.id}: not drawn ({image_reason(exc)})")
+                failed.append((rel, image_reason(exc)))
                 continue
             if image is None:
                 empty.append(part.id)
@@ -435,6 +451,28 @@ def render_extra_images(
                 now = time.time()
                 tracker.image_done(Path(rel).name, now - t_last)
                 t_last = now
+        pool_ids = {p.id for p in pool}
+        empty += [  # parts the image type has certainly nothing for, among those it looked at
+            p.id
+            for p in ranked
+            if p.id not in pool_ids
+            and len(by_id[p.id].geom.table.faces) <= MAX_FACES
+            and order[p.id] < last_rank
+        ]
+        # slots that got no image: a cap, or no part had anything to show
+        if len(pool) > len(slots) and done >= len(slots):
+            result.notes.append(
+                f"{KINDS[kind]}: only the {len(slots)} most important parts are drawn"
+                if len(slots) < MAX_PARTS_PER_TYPE
+                else f"{KINDS[kind]}: only the {MAX_PARTS_PER_TYPE} most important parts are drawn"
+            )
+        for rel in slots[done:]:
+            skip(rel, "nothing to draw or the extra-image cap was reached")
+        rest = [
+            p for p in ranked if len(by_id[p.id].geom.table.faces) > MAX_FACES
+        ]  # left out of the plan
+        for p in rest:
+            result.notes.append(f"{KINDS[kind]} {p.id}: not drawn, more than {MAX_FACES} faces")
         if empty:
             what = {
                 "weak": "weak spots",
@@ -447,23 +485,33 @@ def render_extra_images(
             )
     for kind in assembly_types_for(image_set):
         module = importlib.import_module(ASSEMBLY_MODULES[kind])
+        planned = plan.assembly.get(kind)
         try:
             made: list[tuple[str, Image.Image]] = module.make_assembly(
                 analysis, report, up, front, max_side
             )
-        except ImageSkipped as skip:
-            result.notes.append(f"{KINDS[kind]}: not drawn, {skip}")
+        except ImageSkipped as skip_reason:
+            result.notes.append(f"{KINDS[kind]}: not drawn, {skip_reason}")
+            for rel in planned or []:
+                skip(rel, str(skip_reason))
             continue
         except Exception as exc:  # noqa: BLE001 - a picture must never stop the pack
-            result.notes.append(f"{KINDS[kind]}: not drawn ({type(exc).__name__})")
+            result.notes.append(f"{KINDS[kind]}: not drawn ({image_reason(exc)})")
+            for rel in planned or ASSEMBLY_TYPE_FILES[kind]:
+                failed.append((rel, image_reason(exc)))
+            for rel in planned or []:
+                skip(rel, image_reason(exc))
             continue
         for rel, image in made:
             save_png(fit_side(image, max_side), str(folder / rel))
             result.files.append(rel)
             result.assembly_files.append(rel)
-            if tracker is not None:
+            if tracker is not None and planned is not None:
                 now = time.time()
                 tracker.image_done(Path(rel).name, now - t_last)
                 t_last = now
+        for rel in planned or []:
+            if rel not in {r for r, _ in made}:
+                skip(rel, "not made")
     write_index(folder, report, image_set, max_side, result.files, result.notes)
     return result

@@ -25,7 +25,6 @@ from stepscribe.geometry.occ_utils import occt_version
 from stepscribe.io.discovery import find_step_files
 from stepscribe.io.multi import InputError, InputLimits, expand_inputs
 from stepscribe.progress import Progress as Progress_
-from stepscribe.progress import format_eta
 
 app = typer.Typer(
     add_completion=False,
@@ -175,7 +174,7 @@ def _run(
                 bar.update(
                     task,
                     completed=100 * p.fraction,
-                    description=f"{p.message[:48]:<48} ETA {format_eta(p.eta_s)}",
+                    description=f"{p.message[:48]:<48} remaining {p.eta_text}",
                 )
 
             results = run_jobs(todo, 1, timeout_s, callback=on_progress)

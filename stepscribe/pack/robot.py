@@ -400,6 +400,33 @@ def build_robot(report: Report, payload: Payload | None = None) -> dict[str, Any
     return _round(data)  # type: ignore[no-any-return]
 
 
+def reached_links(robot: dict[str, Any]) -> set[str]:
+    """The base link and every link reached from it through joints (a joint counts only when its parent is
+    reached: a mechanism that nothing ties to the base is not part of the tree)."""
+    reached = {robot["base_link"]}
+    grew = True
+    while grew:
+        grew = False
+        for j in robot["joints"]:
+            if j["parent"] in reached and j["child"] not in reached:
+                reached.add(j["child"])
+                grew = True
+    return reached
+
+
+def joints_in_tree(robot: dict[str, Any]) -> list[dict[str, Any]]:
+    """The joints a URDF can hold: those whose parent link is reached from the base."""
+    reached = reached_links(robot)
+    return [j for j in robot["joints"] if j["parent"] in reached]
+
+
+def unconnected_group_ids(robot: dict[str, Any]) -> list[str]:
+    """Ids of the rigid groups that no joint connects to the base link: a URDF is one tree, so they cannot be
+    placed in it. They stay in robot.json."""
+    reached = reached_links(robot)
+    return [link["id"] for link in robot["links"] if link["id"] not in reached]
+
+
 def robot_json(report: Report, payload: Payload | None = None) -> str | None:
     """robot.json text (stable key order, two-space indent), or None for a non-robot."""
     data = build_robot(report, payload)
