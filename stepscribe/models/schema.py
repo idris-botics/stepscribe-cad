@@ -9,7 +9,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_serializer
 
-SCHEMA_VERSION = "0.6.0"
+SCHEMA_VERSION = "0.7.0"
 
 AxisLabel = Literal["+X", "-X", "+Y", "-Y", "+Z", "-Z"]
 

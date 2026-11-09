@@ -1,14 +1,14 @@
 # Report schema 0.7.0: the one bump
 
-Status: pending (the schema is still 0.6.0)
+Status: released in 0.7.0
 
-The report schema is bumped once, to 0.7.0, after the 2.1 pull requests A (#24), B (#25) and C (#27) are in
-and this one (#29) is merged. No pull request before that bump changes `SCHEMA_VERSION`. Every change below is
+The report schema was bumped once, to 0.7.0, in the 2.1.0 release, after the 2.1 pull requests A (#24), B (#25),
+C (#27) and the output-quality fixes (#29) were in. No pull request before that bump changed `SCHEMA_VERSION`. Every change below is
 additive: an optional field that is left out of the report when it has no value, or a new value of an existing
 label. A report written under 0.6.0 stays valid.
 
-The bump commit must cover every line below and change the status line above to `Status: released in 0.7.0`.
-`tests/test_schema_pending.py` fails if the version moves while the status says pending, or the other way round.
+The bump covers every line below. `tests/test_schema_pending.py` fails if the version and the status line above
+disagree.
 
 ## Added by #29 (checked by the test)
 
