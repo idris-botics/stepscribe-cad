@@ -1,6 +1,6 @@
 # Changelog
 
-## 2.1.0 (date to be confirmed)
+## 2.1.0 (2026-11-09)
 
 The report schema is **0.7.0** (it was 0.6.0). Every new field is optional and appears only where it applies, so a report written under 0.6.0 still loads and the `report.json` of an input that touches none of this has only the new `schema_version`. Everything in 2.1 is an estimate from the file; no number here is an accuracy figure.
 
