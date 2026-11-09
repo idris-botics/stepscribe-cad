@@ -25,7 +25,7 @@ dependencies = [
 ]
 
 [project.urls]
-Repository = "https://github.com/idris900323/stepscribe-cad"
+Repository = "https://github.com/idris-botics/stepscribe-cad"
 
 [project.optional-dependencies]
 dev = ["build", "hatchling==1.32.4", "build123d", "packaging", "psutil", "pytest", "pytest-cov", "ruff", "mypy", "pip-audit", "types-PyYAML"]

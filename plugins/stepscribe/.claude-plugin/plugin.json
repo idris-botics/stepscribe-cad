@@ -6,8 +6,8 @@
   "author": {
     "name": "idris sadiq"
   },
-  "homepage": "https://github.com/idris900323/stepscribe-cad",
-  "repository": "https://github.com/idris900323/stepscribe-cad",
+  "homepage": "https://github.com/idris-botics/stepscribe-cad",
+  "repository": "https://github.com/idris-botics/stepscribe-cad",
   "license": "AGPL-3.0-only",
   "keywords": ["cad", "step", "robotics", "mechanical", "design-review"]
 }
