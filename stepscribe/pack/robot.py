@@ -27,6 +27,7 @@ from stepscribe.understanding.mass_distribution import (
     link_designer_parts,
     principal_dict,
 )
+from stepscribe.understanding.mass_range import body_range, joint_ranges
 from stepscribe.understanding.process import complex_geometry_reason
 from stepscribe.understanding.rigid_body import STATIC_LABEL, G, JointSpec, Payload, holding_loads
 
@@ -208,6 +209,15 @@ def build_robot(report: Report, payload: Payload | None = None) -> dict[str, Any
         row.update(_link_mass(report, g.instance_ids))
         row["mass_is_estimate"] = True
         row["principal_inertia"] = principal_dict(link_body(report, g.instance_ids))
+        spread = body_range(report, g.instance_ids)
+        if spread is not None:  # absent unless a part of the link has an uncertain density
+            row["mass_range"] = {
+                "min": spread["mass_g"][0],
+                "max": spread["mass_g"][1],
+                "reason": spread["reason"],
+                **({"label": spread["label"]} if spread.get("approximate") else {}),
+            }
+            row["principal_inertia"]["range"] = spread
         given = link_designer_parts(report, g.instance_ids)
         if given:  # absent unless the designer gave a mass for one of the link's parts
             row["mass_from_designer_parts"] = given
@@ -257,6 +267,14 @@ def build_robot(report: Report, payload: Payload | None = None) -> dict[str, Any
     ]
     bodies = {g.id: link_body(report, g.instance_ids, reliable=True) for g in kin.links}
     held = holding_loads(specs, bodies, _up(asm.up_axis), payload)
+    ranges = joint_ranges(
+        report,
+        {g.id: g.instance_ids for g in kin.links},
+        specs,
+        {h.joint: h.value for h in held},
+        _up(asm.up_axis),
+        payload,
+    )
     static_loads: dict[str, Any] = {
         "label": STATIC_LABEL,
         "estimate": "estimate from geometry and density; not measured",
@@ -274,7 +292,14 @@ def build_robot(report: Report, payload: Payload | None = None) -> dict[str, Any
         if payload is None
         else {"mass_kg": payload.mass_kg, "offset_mm": payload.offset_mm},
         "joints": [
-            {"joint": h.joint, "type": h.kind, "value": h.value, "unit": h.unit, "reason": h.reason}
+            {
+                "joint": h.joint,
+                "type": h.kind,
+                "value": h.value,
+                "unit": h.unit,
+                "reason": h.reason,
+                **({"value_range": ranges[h.joint]} if h.joint in ranges else {}),
+            }
             for h in held
         ],
     }

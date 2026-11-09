@@ -326,7 +326,10 @@ ASSUMPTION_1 = (
 
 
 def test_the_assumptions_use_the_agreed_wording() -> None:
-    assert len(md.ASSUMPTIONS) == 4
+    assert len(md.ASSUMPTIONS) == 5
+    assert (
+        "If a part is hollow or cast, its real mass is lower than the estimate." in md.ASSUMPTIONS
+    )
     joined = " ".join(md.ASSUMPTIONS)
     assert ASSUMPTION_1 == md.ASSUMPTIONS[0]
     assert "they are not measured values" in joined and "will not match the real part" in joined

@@ -72,6 +72,42 @@ chord that subtends an angle t the area of a circle is short by about t^2/6 and 
 4 t^2/6. The meshes use t <= 0.03 rad, which bounds the difference from the tessellation by 6e-4, so 1e-3 is
 above what the mesh itself can cause. A larger difference points at one of the two methods.
 
+## Ranges where the assumption is shaky
+
+A range is shown only where there is a documented reason:
+
+- the density was **guessed from a part name** ("density guessed from the name; range for the family"), or
+- the material is known **only at family level**, a keyword with no grade such as `steel` or `aluminium`
+  ("material known only at family level; range for the family").
+
+The typical density range of each family is in `stepscribe/knowledge/material_density_ranges.yaml`, with the
+general reference class it stands for (as `source` and as a comment above each entry). **Any digit in a material
+text counts as a grade**: `aluminium 6061`, `alu6061` and `304 stainless` have no range, `aluminium` has one. A
+material with a grade, a density you state
+(`--density`), a density read from the STEP file and a measured mass (`mass_g`) have **no** range.
+
+No lower bound is invented for a part that might be hollow or cast; the assumptions carry one fixed sentence
+instead: *If a part is hollow or cast, its real mass is lower than the estimate.*
+
+- For the printed-plastic families (`pla`, `petg`, `abs`, `nylon`) the range text adds "solid value; a printed
+  part with infill is lighter". For `cf` it adds "the range covers both a carbon laminate and carbon-filled
+  filament".
+- The point value stays the nominal one; `robot.json` and `robot.urdf` keep using it. A range appears beside
+  it: `density_range` on a part's `mass` in `report.json`; `mass_range` (min, max, reason) and
+  `principal_inertia.range` on a link in `robot.json`; `value_range` (min, max, reason) on a joint load. The URDF
+  header says that ranges exist.
+- The pack section lines read "low to high (reason): mass, principal moments, radii of gyration". For one
+  part the radius of gyration does not depend on a uniform density, so it reads as one value.
+- A link or the assembly takes the range over the corners of its parts' density ranges (each uncertain part at
+  its low or high density; the instances of one part move together). With more than ten uncertain parts the
+  corners are replaced by all-low, all-high and every single flip, and the link or assembly range is labelled
+  **"approximate range"** in the pack and in `robot.json` (`mass_range.label`, `principal_inertia.range.label`).
+  The exact extremes of the moments can then lie slightly outside it. (The static holding torque range is exact
+  interval arithmetic and is never labelled approximate.)
+- **Static holding torque** uses interval arithmetic: each part's term is linear in its mass and may have
+  either sign (a counterweight), so each term takes its own min and max, never "all low" or "all high". A joint
+  that is "not computed" stays so.
+
 ## Which way gravity points
 
 Gravity points along the opposite of the up axis used for the analysis. The up axis is `+Z` unless you pass

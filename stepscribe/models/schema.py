@@ -73,6 +73,14 @@ class DesignerMass(_M):
         return data
 
 
+class DensityRange(_M):
+    """Typical density range of the material family, where the density is an assumption (see density_range.py)."""
+
+    min_g_cm3: float
+    max_g_cm3: float
+    reason: str
+
+
 class MassProperties(_M):
     volume_mm3: float
     surface_area_mm2: float
@@ -83,13 +91,17 @@ class MassProperties(_M):
     material_source: Literal["user", "step_file", "name_guess", "none", "designer_mass"] = "none"
     inertia_tensor_g_mm2: list[list[float]] | None = None
     designer_mass: DesignerMass | None = None  # absent unless the designer gave a mass for the part
+    density_range: DensityRange | None = (
+        None  # absent unless the density is a guess or family-level
+    )
 
     @model_serializer(mode="wrap")
-    def _omit_absent_designer_mass(self, handler: Any) -> dict[str, Any]:
-        """report.json carries ``designer_mass`` only for a part the designer gave a mass for."""
+    def _omit_absent_extras(self, handler: Any) -> dict[str, Any]:
+        """report.json carries ``designer_mass`` and ``density_range`` only where they apply."""
         data: dict[str, Any] = handler(self)
-        if data.get("designer_mass") is None:
-            data.pop("designer_mass", None)
+        for key in ("designer_mass", "density_range"):
+            if data.get(key) is None:
+                data.pop(key, None)
         return data
 
 

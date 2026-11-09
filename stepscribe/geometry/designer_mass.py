@@ -38,6 +38,7 @@ FROM_NEW_MASS = (
     "material_assumed",
     "material_source",
     "inertia_tensor_g_mm2",
+    "density_range",  # set again for the new material by set_range
 )
 KEPT_FROM_OLD_MASS = ("designer_mass",)
 
@@ -127,6 +128,7 @@ def apply_designer_mass(part: Part, shape: TopoDS_Shape, given_g: float) -> None
             "designer_mass"  # the density is derived from the mass, it is not a material
         )
     m.mass_g = given_g
+    m.density_range = None  # a measured mass has no range
     m.inertia_tensor_g_mm2 = inertia
     m.designer_mass = DesignerMass(
         given_g=given_g,

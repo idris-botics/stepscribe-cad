@@ -943,6 +943,31 @@
       "title": "CutoutPattern",
       "type": "object"
     },
+    "DensityRange": {
+      "additionalProperties": false,
+      "description": "Typical density range of the material family, where the density is an assumption (see density_range.py).",
+      "properties": {
+        "min_g_cm3": {
+          "title": "Min G Cm3",
+          "type": "number"
+        },
+        "max_g_cm3": {
+          "title": "Max G Cm3",
+          "type": "number"
+        },
+        "reason": {
+          "title": "Reason",
+          "type": "string"
+        }
+      },
+      "required": [
+        "min_g_cm3",
+        "max_g_cm3",
+        "reason"
+      ],
+      "title": "DensityRange",
+      "type": "object"
+    },
     "DesignerMass": {
       "additionalProperties": false,
       "description": "A mass the designer gave for a part (``parts: <name>: mass_g``) and what was done with it.",
@@ -2265,6 +2290,17 @@
           "anyOf": [
             {
               "$ref": "#/$defs/DesignerMass"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "density_range": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/DensityRange"
             },
             {
               "type": "null"
