@@ -68,6 +68,8 @@ def process_file(job: Job, callback: ProgressFn | None = None) -> dict[str, Any]
     from stepscribe.pack.writer import write_pack
 
     start = time.time()
+    tracker: Tracker | None = None
+    analysis: Any = None
     try:
         opts = options_from_dict(job.options)
         if job.context_file:
@@ -75,6 +77,7 @@ def process_file(job: Job, callback: ProgressFn | None = None) -> dict[str, Any]
             apply_context(opts, ctx)
         tracker = Tracker(callback)
         tracker.images_wanted = job.images and job.mode == "pack"
+        tracker.image_set = str(job.export.get("image_set", "basic"))
         if job.mode == "export":
             return _export_file(job, opts, tracker, start)
         analysis = analyze_full(job.paths if job.paths else job.path, opts, tracker, job.name)
@@ -109,6 +112,23 @@ def process_file(job: Job, callback: ProgressFn | None = None) -> dict[str, Any]
         tracker.finish("finished")
         return _summarise(job.path, analysis.report, status, pack_dir, time.time() - start)
     except Exception as exc:  # noqa: BLE001
+        from stepscribe.pack.failure import failure
+        from stepscribe.pack.writer import pack_folder
+
+        out = Path(job.out_dir)
+        kin = (
+            analysis.report.understanding.kinematics
+            if analysis is not None and analysis.report.understanding is not None
+            else None
+        )
+        info = failure(
+            exc,
+            out,
+            Path(job.path).stem,
+            tracker.stage_name if tracker is not None else None,
+            pack_folder(analysis, out) if analysis is not None and job.mode == "pack" else None,
+            robot_expected=bool(kin is not None and kin.joints),
+        )
         return {
             "file": job.path,
             "status": "error",
@@ -118,7 +138,15 @@ def process_file(job: Job, callback: ProgressFn | None = None) -> dict[str, Any]
             "relations": 0,
             "mass_g": None,
             "warnings": 0,
-            "errors": [f"{type(exc).__name__}: {exc}"],
+            "errors": [
+                x
+                for x in (
+                    f"{type(exc).__name__}: {exc}",
+                    info.saved,
+                    f"Full details (the traceback): {info.log}" if info.log else "",
+                )
+                if x
+            ],
             "pack": None,
             "seconds": round(time.time() - start, 2),
         }

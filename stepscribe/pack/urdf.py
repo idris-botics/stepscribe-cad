@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, Any
 from xml.sax.saxutils import quoteattr
 
 from stepscribe.models.schema import Report
-from stepscribe.pack.robot import build_robot
+from stepscribe.pack.robot import build_robot, joints_in_tree, unconnected_group_ids
 
 if TYPE_CHECKING:
     from stepscribe.pack.meshes import LinkMeshes
@@ -131,14 +131,33 @@ def build_urdf(robot: dict[str, Any] | None, meshes: dict[str, LinkMeshes] | Non
     if robot is None:
         raise ValueError("not a robot: nothing to write")
     base = robot["base_link"]
+    tree = joints_in_tree(robot)  # a joint no path from the base reaches is left out with its links
     frame: dict[str, list[float]] = {base: [0.0, 0.0, 0.0]}
-    for j in robot["joints"]:
+    for j in tree:
         frame[j["child"]] = j["origin_mm"]
     out = ['<?xml version="1.0"?>', "<!--"]
     out += ["  " + x for x in _header(robot, meshes)]
+    # a URDF is one tree: a rigid group that no joint connects to the base cannot be placed in it
+    unconnected = unconnected_group_ids(robot)
+    if unconnected:
+        out += [
+            "  ",
+            *(
+                "  " + _c(x)
+                for x in (
+                    f"Not written: {len(unconnected)} rigid group(s) that no joint connects to the base "
+                    f"link{'' if len(tree) == len(robot['joints']) else ' (and ' + str(len(robot['joints']) - len(tree)) + ' joint(s) between them)'} "
+                    "(no fastener, pivot or joint evidence ties them to the arm; they are listed in "
+                    "robot.json with their mass and centre of mass):",
+                    ", ".join(unconnected),
+                )
+            ),
+        ]
     out += ["-->", f"<robot name={quoteattr(_name(robot['source']))}>"]
     wrote_note = False
     for link in robot["links"]:
+        if link["id"] in unconnected:
+            continue
         names = ", ".join(i["name"] for i in link["instances"])
         out.append(f"  <!-- {_c(link['id'])}: {_c(names)} -->")
         if link.get("mass_label"):  # only when the designer gave a mass for one of its parts
@@ -175,7 +194,7 @@ def build_urdf(robot: dict[str, Any] | None, meshes: dict[str, LinkMeshes] | Non
         if meshes and link["id"] in meshes:
             out += _geometry(meshes[link["id"]])
         out.append("  </link>")
-    for j in robot["joints"]:
+    for j in tree:
         axis = list(j["axis"])  # robot.json already holds the arrow in the designer's convention
         notes = []
         if j.get("axis_flipped"):

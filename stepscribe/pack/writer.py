@@ -198,6 +198,26 @@ def write_pack(
     ).folder
 
 
+def _unconnected_groups(report: Report) -> list[str]:
+    """Rigid groups of a robot that no joint reaches (left out of robot.urdf, listed in robot.json)."""
+    from stepscribe.pack.robot import build_robot, unconnected_group_ids
+
+    robot = build_robot(report) if report.understanding is not None else None
+    return [] if robot is None else unconnected_group_ids(robot)
+
+
+def pack_folder(analysis: Analysis, out_dir: Path) -> Path:
+    """The folder a pack of *analysis* is written to under *out_dir*."""
+    report = analysis.report
+    root_name = (
+        analysis.model.root_name if analysis.model else Path(report.meta.source_files[0]).stem
+    )
+    stem = (
+        root_name if len(report.meta.source_files) > 1 else Path(report.meta.source_files[0]).stem
+    )
+    return out_dir / f"{_safe(stem)}_context_pack"
+
+
 def write_pack_build(
     analysis: Analysis,
     out_dir: Path,
@@ -224,10 +244,7 @@ def write_pack_build(
         else str(report.meta.options.get("front", "-Y"))
     )
     env = _env()
-    stem = (
-        root_name if len(report.meta.source_files) > 1 else Path(report.meta.source_files[0]).stem
-    )
-    folder = folder or out_dir / f"{_safe(stem)}_context_pack"
+    folder = folder or pack_folder(analysis, out_dir)
     (folder / "03_parts").mkdir(parents=True, exist_ok=True)
     ctx: dict[str, Any] = load_context(context_file) if context_file else {}
     images_written: list[str] = []
@@ -245,6 +262,8 @@ def write_pack_build(
             if existing.is_dir()
             else []
         )
+    if tracker is not None:
+        tracker.stage("write", "writing the pack files")
     from stepscribe.describe.reconstruct import reconstruction
 
     recon = {ap.part.id: reconstruction(ap.part, ap.geom) for ap in analysis.parts}
@@ -263,6 +282,12 @@ def write_pack_build(
             sources=report.sources,
             frame_hedge=frame_hedge(report.warnings),
             file_notes=[w for w in report.warnings if any(m in w for m in FILE_NOTE_MARKERS)],
+            unconnected_groups=_unconnected_groups(report),
+            images_not_drawn=[
+                w.removeprefix("image not drawn: ")
+                for w in report.warnings
+                if w.startswith("image not drawn: ")
+            ],
         ),
     )
     put("01_overview.md", sections.level0 + "\n")
@@ -293,38 +318,6 @@ def write_pack_build(
 
         (folder / "data").mkdir(parents=True, exist_ok=True)
         put("data/kinematics_debug.md", debug_markdown(report.understanding.kinematics_debug))
-    from stepscribe.pack.robot import robot_json
-
-    robot = robot_json(report, payload_from_context(ctx)[0])
-    if robot is not None:
-        put("robot.json", robot)
-        from stepscribe.pack.urdf import urdf_text
-
-        link_meshes = None
-        if meshes:  # only on request: the default pack stays small and fast
-            from stepscribe.pack.robot import build_robot
-
-            robot_dict = build_robot(report)
-            assert robot_dict is not None
-            with timings.stage("meshes"):
-                link_meshes = write_link_meshes(
-                    analysis, robot_dict, folder, mesh_max_triangles, mesh_visual_max_triangles
-                )
-        urdf = urdf_text(report, link_meshes)
-        if urdf is not None:
-            put("robot.urdf", urdf)
-    if report.meta.options.get("debug_graphs"):
-        import json
-
-        from stepscribe.understanding.aag import aag_to_dict, build_aag
-
-        (folder / "data").mkdir(parents=True, exist_ok=True)
-        for ap in analysis.parts:
-            graph = aag_to_dict(build_aag(ap.geom))
-            put(
-                f"data/aag_{ap.part.id}.json",
-                json.dumps(graph, indent=1, ensure_ascii=False) + "\n",
-            )
     put(
         "02_assembly.md",
         env.get_template("02_assembly.md.j2").render(
@@ -359,4 +352,37 @@ def write_pack_build(
     text, detailed, short = compose_budgeted(sections, budget_tokens, header)
     put("context_pack.md", text)
     write_report(report, folder / "data" / "report.json", config.FLOAT_PRECISION)
+    # the robot files come last: if one of them fails, the text pack above is already complete
+    from stepscribe.pack.robot import robot_json
+
+    robot = robot_json(report, payload_from_context(ctx)[0])
+    if robot is not None:
+        put("robot.json", robot)
+        from stepscribe.pack.urdf import urdf_text
+
+        link_meshes = None
+        if meshes:  # only on request: the default pack stays small and fast
+            from stepscribe.pack.robot import build_robot
+
+            robot_dict = build_robot(report)
+            assert robot_dict is not None
+            with timings.stage("meshes"):
+                link_meshes = write_link_meshes(
+                    analysis, robot_dict, folder, mesh_max_triangles, mesh_visual_max_triangles
+                )
+        urdf = urdf_text(report, link_meshes)
+        if urdf is not None:
+            put("robot.urdf", urdf)
+    if report.meta.options.get("debug_graphs"):
+        import json
+
+        from stepscribe.understanding.aag import aag_to_dict, build_aag
+
+        (folder / "data").mkdir(parents=True, exist_ok=True)
+        for ap in analysis.parts:
+            graph = aag_to_dict(build_aag(ap.geom))
+            put(
+                f"data/aag_{ap.part.id}.json",
+                json.dumps(graph, indent=1, ensure_ascii=False) + "\n",
+            )
     return PackBuild(folder, sections, env, root_name, up, front, ctx, qa, images_written)
