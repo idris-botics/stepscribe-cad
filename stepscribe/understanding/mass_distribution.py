@@ -15,6 +15,9 @@ from typing import Any
 import numpy as np
 
 from stepscribe.describe.phrases import fmt
+from stepscribe.geometry.density_range import HOLLOW_SENTENCE
+from stepscribe.geometry.designer_mass import DENSITY_DERIVED
+from stepscribe.geometry.designer_mass import LABEL as DESIGNER_LABEL
 from stepscribe.models.schema import Instance, Part, Report
 from stepscribe.understanding.process import complex_geometry_reason
 from stepscribe.understanding.rigid_body import (
@@ -33,6 +36,7 @@ ASSUMPTIONS = [
     "and models that are simplified outer skins, are not like that; the mass and inertia of such parts "
     "will not match the real part.",
     "A density guessed from a part name is a guess; the line says which parts rest on one.",
+    HOLLOW_SENTENCE,
     "Moments are about the centre of mass, in the axes named; radii of gyration are k = sqrt(I / m).",
 ]
 
@@ -144,6 +148,69 @@ def payload_from_context(ctx: dict[str, Any]) -> tuple[Payload | None, str | Non
     return Payload(mass, np.array(offset)), None
 
 
+def _part_range_field(part: Part) -> dict[str, Any]:
+    """``range`` of a computed part whose density is an assumption (a uniform scaling of its density)."""
+    from stepscribe.understanding.mass_range import factors
+
+    body, fr = part_body(part), factors(part)
+    if isinstance(body, str) or fr is None or part.mass.density_range is None:
+        return {}
+    p = principal_inertia(body.inertia_g_mm2, body.mass_g)
+    return {
+        "range": {
+            "mass_g": [body.mass_g * fr[0], body.mass_g * fr[1]],
+            "moments_g_mm2": [[float(m) * fr[0], float(m) * fr[1]] for m in p.moments_g_mm2],
+            "radii_of_gyration_mm": [
+                [float(k), float(k)] for k in p.radii_mm
+            ],  # k does not depend on density
+            "reason": part.mass.density_range.reason,
+            "parts": [part.id],
+        }
+    }
+
+
+def _body_range_field(report: Report, instance_ids: list[str]) -> dict[str, Any]:
+    from stepscribe.understanding.mass_range import body_range
+
+    r = body_range(report, instance_ids)
+    return {} if r is None else {"range": r}
+
+
+def _link_designer_fields(report: Report, instance_ids: list[str]) -> dict[str, Any]:
+    used = link_designer_parts(report, instance_ids)
+    return {"mass_from_designer_parts": used, "mass_label": DESIGNER_LABEL} if used else {}
+
+
+def _designer_fields(part: Part) -> dict[str, Any]:
+    """The label of a mass the designer gave, or the note that it was not used; empty without one."""
+    dm = part.mass.designer_mass
+    if dm is None:
+        return {}
+    if dm.used:
+        out: dict[str, Any] = {
+            "mass_source": "designer",
+            "mass_label": dm.note,
+            "mass_given_g": dm.given_g,
+        }
+        if dm.ratio_note:
+            out["mass_ratio_note"] = dm.ratio_note
+        if part.mass.material_source == "designer_mass":
+            out["density_note"] = DENSITY_DERIVED
+        return out
+    return {"designer_mass_not_used": dm.note}
+
+
+def link_designer_parts(report: Report, instance_ids: list[str]) -> list[str]:
+    """Ids of the parts, among the instances of one link, whose mass the designer gave and that was used."""
+    assert report.assembly is not None
+    parts = {p.id: p for p in report.parts}
+    by_id = {i.id: i for i in report.assembly.instances}
+    ids = {by_id[i].part_id for i in instance_ids}
+    return sorted(
+        pid for pid in ids if (dm := parts[pid].mass.designer_mass) is not None and dm.used
+    )
+
+
 def mass_distribution(report: Report) -> dict[str, Any]:
     """Principal inertia of every part, of every link (robots) and of the assembly (>= 2 bodies)."""
     parts = [
@@ -151,6 +218,8 @@ def mass_distribution(report: Report) -> dict[str, Any]:
             "id": p.id,
             "material_source": p.mass.material_source,
             **principal_dict(part_body(p)),
+            **_designer_fields(p),
+            **_part_range_field(p),
         }
         for p in report.parts
     ]
@@ -162,12 +231,25 @@ def mass_distribution(report: Report) -> dict[str, Any]:
     }
     asm = report.assembly
     if asm is not None:
-        out["assembly"] = principal_dict(assembly_body(report))
+        out["assembly"] = {
+            **principal_dict(assembly_body(report)),
+            **_body_range_field(report, [i.id for i in asm.instances]),
+        }
         if report.understanding is not None:
             out["links"] = [
-                {"id": g.id, **principal_dict(link_body(report, g.instance_ids))}
+                {
+                    "id": g.id,
+                    **principal_dict(link_body(report, g.instance_ids)),
+                    **_link_designer_fields(report, g.instance_ids),
+                    **_body_range_field(report, g.instance_ids),
+                }
                 for g in report.understanding.kinematics.links
             ]
+    given = sorted(
+        p.id for p in report.parts if p.mass.designer_mass is not None and p.mass.designer_mass.used
+    )
+    if given:
+        out["mass_from_designer"] = given
     guessed = sorted(p.id for p in report.parts if p.mass.material_source == "name_guess")
     if guessed:
         out["density_guessed_from_name"] = guessed
@@ -179,12 +261,44 @@ def _vec_text(v: list[float], nd: int = 3) -> str:
 
 
 def _principal_lines(label: str, d: dict[str, Any]) -> list[str]:
+    lines = _moment_lines(label, d)
+    if d.get("designer_mass_not_used"):
+        lines.append(f"  - {d['designer_mass_not_used']}")
+    if d.get("range") and d["status"] == "computed":
+        r = d["range"]
+        lines.append(
+            f"  - {r.get('label', 'low to high')} ({r['reason']}): mass {_span(r['mass_g'])} g; principal moments "
+            + ", ".join(_span(m, 1) for m in r["moments_g_mm2"])
+            + " g*mm^2; radii of gyration "
+            + ", ".join(_span(k, 2) for k in r["radii_of_gyration_mm"])
+            + " mm"
+        )
+    if d.get("density_note"):
+        lines.append(f"  - {d['density_note']}")
+    if d.get("mass_ratio_note"):
+        lines.append(f"  - {d['mass_ratio_note']}")
+    if d.get("mass_from_designer_parts"):
+        lines.append(
+            "  - includes a mass from the designer for: " + ", ".join(d["mass_from_designer_parts"])
+        )
+    return lines
+
+
+def _span(pair: list[float], nd: int = 3) -> str:
+    """'low to high', or the one value when the two read the same."""
+    lo, hi = fmt(pair[0], nd), fmt(pair[1], nd)
+    return lo if lo == hi else f"{lo} to {hi}"
+
+
+def _moment_lines(label: str, d: dict[str, Any]) -> list[str]:
     if d["status"] != "computed":
         return [f"- {label}: not computed: {d['reason']}"]
     mom = d["moments_g_mm2"]
     k = d["radii_of_gyration_mm"]
     lines = [
-        f"- {label}: mass {fmt(d['mass_g'])} g, centre of mass {_vec_text(d['com_mm'], 1)} mm; "
+        f"- {label}: mass {fmt(d['mass_g'])} g"
+        + (" (" + DESIGNER_LABEL + ")" if d.get("mass_label") else "")
+        + f", centre of mass {_vec_text(d['com_mm'], 1)} mm; "
         f"principal moments {', '.join(fmt(m, 1) for m in mom)} g*mm^2; "
         f"radii of gyration {', '.join(fmt(x, 2) for x in k)} mm"
     ]
@@ -251,6 +365,11 @@ def mass_markdown(
                     f"(magnitude {fmt(abs(j['value']), 3)} {j['unit']}); the sign is the direction "
                     "about the joint's positive axis"
                 )
+                if j.get("value_range"):
+                    v = j["value_range"]
+                    lines.append(
+                        f"  - low to high ({v['reason']}): {_span([v['min'], v['max']])} {j['unit']}"
+                    )
     elif payload_note:
         lines += ["", f"- {payload_note}"]
     return "\n".join(lines) + "\n"
