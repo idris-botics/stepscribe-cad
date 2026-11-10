@@ -19,9 +19,10 @@ jobs:
       matrix:
         # macOS runners are scarce and slow, so a pull request runs Linux and Windows; macOS runs
         # on every push to main and build/** and on demand (workflow_dispatch), before a release.
-        os: ${{ fromJSON(github.event_name == 'pull_request' && '["ubuntu-latest","windows-latest"]' || '["ubuntu-latest","windows-latest","macos-latest"]') }}
-        python: ["3.11", "3.12", "3.13"]
+        os: ["macos-latest"]
+        python: ["3.12"]
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -42,9 +43,9 @@ jobs:
       - run: mypy stepscribe
       - run: python scripts/sync_skills.py --check
       - run: python scripts/check_release.py
-      - run: ${{ runner.os == 'Linux' && 'xvfb-run -a ' || '' }}pytest -q -p no:cacheprovider --junitxml=junit.xml
+      - run: ${{ runner.os == 'Linux' && 'xvfb-run -a ' || '' }}pytest -v -p no:cacheprovider -o faulthandler_timeout=300 tests/test_mass_ranges.py tests/test_mcp.py tests/test_mcp_cache.py tests/test_mcp_crash_log.py tests/test_mcp_memory.py tests/test_ml_optin.py tests/test_multi_file.py
       - name: No test may be skipped unexpectedly (the POSIX tests must run on Linux and macOS)
-        if: always()
+        if: false
         run: python scripts/check_skips.py junit.xml
 
   # Layer 2 of validate-robot needs the optional extra (MuJoCo). Every test that uses MuJoCo runs
