@@ -22,7 +22,7 @@ jobs:
         os: ["macos-latest"]
         python: ["3.12"]
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 40
+    timeout-minutes: 130
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -43,7 +43,7 @@ jobs:
       - run: mypy stepscribe
       - run: python scripts/sync_skills.py --check
       - run: python scripts/check_release.py
-      - run: ${{ runner.os == 'Linux' && 'xvfb-run -a ' || '' }}pytest -v -p no:cacheprovider -o faulthandler_timeout=300 tests/test_mass_ranges.py tests/test_mcp.py tests/test_mcp_cache.py tests/test_mcp_crash_log.py tests/test_mcp_memory.py tests/test_ml_optin.py tests/test_multi_file.py
+      - run: ${{ runner.os == 'Linux' && 'xvfb-run -a ' || '' }}pytest -v -p no:cacheprovider -o faulthandler_timeout=300
       - name: No test may be skipped unexpectedly (the POSIX tests must run on Linux and macOS)
         if: false
         run: python scripts/check_skips.py junit.xml
