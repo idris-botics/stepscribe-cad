@@ -116,6 +116,7 @@ def _analyse_bodies(
         )
     timings.note("part_workers", text)
     timings.count("part_workers", workers)
+    tracker.set_workers(workers)
     tracker.emit(text)
     advice = memory_advice(choice) if workers == choice.workers else None
     if advice:
@@ -218,8 +219,8 @@ def _analyse_bodies(
                             results[i] = part
                             bores[i] = bores_found
                             timings.add_part(bodies[i][1], n_faces(i), secs)
-                            # wall-clock share, so the ETA (faces per second) reflects the parallel speed
-                            tracker.part_done(bodies[i][1], n_faces(i), secs / workers)
+                            # the wall-clock share is shown; the time in its own process feeds the estimate
+                            tracker.part_done(bodies[i][1], n_faces(i), secs / workers, cpu_s=secs)
             except (BrokenProcessPool, RuntimeError, OSError):
                 retry = [i for i in order if i not in results]
             if retry:
@@ -317,6 +318,7 @@ def analyze_full(
         len(bodies),
         sum(faces.values()),
         model.is_assembly or len(model.instances) > 1 or len(bodies) > 1,
+        sizes=tuple(faces[id(shape)] for _k, _n, shape, _c in bodies),
     )
     parts: list[AnalyzedPart] = []
     proto_parts: dict[str, list[AnalyzedPart]] = {}
@@ -342,6 +344,19 @@ def analyze_full(
         proto_parts.setdefault(key, []).append(ap)
     assign_part_ids([ap.part for ap in parts])
     parts.sort(key=lambda ap: ap.part.id)
+    known = {ap.part.name for ap in parts}
+    for name in opts.extra.get("part_masses", {}):
+        if name not in known:
+            warnings.append(
+                f"design_context.yaml gives mass_g for '{name}', which is not a part name: not used"
+            )
+    for name in opts.extra.get("part_masses", {}):
+        volumes = [ap.part.mass.volume_mm3 for ap in parts if ap.part.name == name]
+        if len(volumes) > 1 and max(volumes) > min(volumes) * 1.01:
+            warnings.append(
+                f"design_context.yaml gives mass_g for '{name}', which is the name of {len(volumes)} parts "
+                "whose volumes differ by more than 1%: each of them gets the mass given"
+            )
     report = Report(
         meta=_meta([s.name for s in model.sources] or [p.name], model.original_unit, opts),
         parts=[ap.part for ap in parts],

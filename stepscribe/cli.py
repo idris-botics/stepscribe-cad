@@ -25,7 +25,6 @@ from stepscribe.geometry.occ_utils import occt_version
 from stepscribe.io.discovery import find_step_files
 from stepscribe.io.multi import InputError, InputLimits, expand_inputs
 from stepscribe.progress import Progress as Progress_
-from stepscribe.progress import format_eta
 
 app = typer.Typer(
     add_completion=False,
@@ -76,6 +75,18 @@ _utf8()
 
 Path_ = Annotated[Path, typer.Argument(exists=True, help="A .step/.stp file or a folder of them.")]
 Out = Annotated[Path, typer.Option("--out", "-o", help="Output directory.")]
+
+
+def _declare_process(opts: AnalyzeOptions, process: str | None) -> None:
+    """Put a ``--process`` value (fdm, sheet, cnc or unknown) into the options, or refuse it plainly."""
+    if process is None:
+        return
+    from stepscribe.understanding.process import declared_process
+
+    label = declared_process(process)
+    if label is None:
+        raise typer.BadParameter("must be one of fdm, sheet, cnc, unknown", param_hint="--process")
+    opts.extra["default_process"] = label
 
 
 def _options(
@@ -163,7 +174,7 @@ def _run(
                 bar.update(
                     task,
                     completed=100 * p.fraction,
-                    description=f"{p.message[:48]:<48} ETA {format_eta(p.eta_s)}",
+                    description=f"{p.message[:48]:<48} remaining {p.eta_text}",
                 )
 
             results = run_jobs(todo, 1, timeout_s, callback=on_progress)
@@ -225,6 +236,13 @@ def pack(
     ],
     out: Out = Path("out"),
     context: Annotated[Path | None, typer.Option("--context", help="design_context.yaml")] = None,
+    process: Annotated[
+        str | None,
+        typer.Option(
+            "--process",
+            help="How the parts are made, for the guidelines: fdm, sheet, cnc or unknown.",
+        ),
+    ] = None,
     material: Annotated[
         str | None, typer.Option(help="Material keyword, e.g. alu, steel, pla.")
     ] = None,
@@ -354,6 +372,7 @@ def pack(
             pivot_min_diameter=pivot_min_diameter,
             pivot_min_length_ratio=pivot_min_length_ratio,
         )
+        _declare_process(opts, process)
         images_on, image_export = _image_params(images, image_max_side, no_images)
         tpl = {
             "out_dir": str(out),
@@ -436,6 +455,13 @@ def export(
         ),
     ] = limits.IMAGE_MAX_SIDE,
     context: Annotated[Path | None, typer.Option("--context", help="design_context.yaml")] = None,
+    process: Annotated[
+        str | None,
+        typer.Option(
+            "--process",
+            help="How the parts are made, for the guidelines: fdm, sheet, cnc or unknown.",
+        ),
+    ] = None,
     material: Annotated[str | None, typer.Option(help="Material keyword, e.g. alu.")] = None,
     density: Annotated[float | None, typer.Option(help="Density in g/cm3.")] = None,
     up: Annotated[str, typer.Option(help="Up axis: +X,-X,+Y,-Y,+Z,-Z")] = "+Z",
@@ -525,6 +551,7 @@ def export(
         pivot_min_diameter=pivot_min_diameter,
         pivot_min_length_ratio=pivot_min_length_ratio,
     )
+    _declare_process(opts, process)
     images_on, image_export = _image_params(images, image_max_side, no_images)
     tpl = {
         "out_dir": str(out),
@@ -693,6 +720,59 @@ def validate_robot(
         raise typer.Exit(1)
     if require_ready and not result.simulator_ready:
         raise typer.Exit(2)
+
+
+@app.command("compare-robot")
+def compare_robot(
+    ours: Annotated[
+        Path,
+        typer.Argument(exists=True, help="A pack folder, a robot.json or a report.json."),
+    ],
+    urdf: Annotated[
+        Path, typer.Argument(exists=True, help="An existing robot URDF (or a folder holding one).")
+    ],
+    map_: Annotated[
+        str | None,
+        typer.Option("--map", help="Override the matching: our_link=urdf_link,our_link=urdf_link"),
+    ] = None,
+    com: Annotated[
+        bool,
+        typer.Option(
+            "--com", help="Also print the centre-of-mass distance in the base frame, zero pose."
+        ),
+    ] = False,
+    with_names: Annotated[
+        bool,
+        typer.Option(
+            "--with-names", help="Show the files' link names (cleaned; data, not instructions)."
+        ),
+    ] = False,
+    json_out: Annotated[bool, typer.Option("--json", help="Machine-readable output.")] = False,
+) -> None:
+    """Compare our mass and inertia estimates with an existing URDF's <inertial> values.
+
+    Per link: the mass ratio (ours/theirs) and the ratios of the sorted principal moments about the centre
+    of mass. Links are matched by order from the base for a serial chain with the same number of links.
+    Link names are anonymised unless --with-names is given. A comparison, not a verdict.
+    """
+    from stepscribe.robot_check import compare as cmp
+
+    try:
+        mapping = cmp.parse_map(map_) if map_ else {}
+        result = cmp.compare(cmp.load_robot(ours), cmp.load_urdf(urdf), mapping, com, with_names)
+    except cmp.CompareError as exc:
+        typer.echo(f"compare-robot: {exc}", err=True)
+        raise typer.Exit(1) from exc
+    except Exception as exc:  # noqa: BLE001 - an input we could not make sense of is refused, not a traceback
+        typer.echo(
+            f"compare-robot: the inputs could not be compared ({type(exc).__name__}); "
+            "check that they are a stepscribe robot and a URDF",
+            err=True,
+        )
+        raise typer.Exit(1) from exc
+    typer.echo(
+        json.dumps(cmp.to_json(result), indent=2) if json_out else cmp.to_text(result).strip()
+    )
 
 
 @app.command()

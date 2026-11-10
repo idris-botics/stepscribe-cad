@@ -17,14 +17,17 @@ from typing import Any
 import numpy as np
 
 from stepscribe.assembly.file_frames import frame_hedge
+from stepscribe.geometry.designer_mass import LABEL as DESIGNER_LABEL
 from stepscribe.models.schema import AxisLabel, KinJoint, Part, Report
 from stepscribe.understanding.mass_distribution import (
     ASSUMPTIONS,
     down_label,
     gravity_note,
     link_body,
+    link_designer_parts,
     principal_dict,
 )
+from stepscribe.understanding.mass_range import body_range, joint_ranges
 from stepscribe.understanding.process import complex_geometry_reason
 from stepscribe.understanding.rigid_body import STATIC_LABEL, G, JointSpec, Payload, holding_loads
 
@@ -205,7 +208,29 @@ def build_robot(report: Report, payload: Payload | None = None) -> dict[str, Any
         }
         row.update(_link_mass(report, g.instance_ids))
         row["mass_is_estimate"] = True
+        step_ids = sorted(
+            {
+                inst_part[i]
+                for i in g.instance_ids
+                if parts[inst_part[i]].mass.material_source == "step_file"
+            }
+        )
+        if step_ids:  # absent unless a part of the link uses the material the STEP file states
+            row["mass_material_from_step_file"] = step_ids
         row["principal_inertia"] = principal_dict(link_body(report, g.instance_ids))
+        spread = body_range(report, g.instance_ids)
+        if spread is not None:  # absent unless a part of the link has an uncertain density
+            row["mass_range"] = {
+                "min": spread["mass_g"][0],
+                "max": spread["mass_g"][1],
+                "reason": spread["reason"],
+                **({"label": spread["label"]} if spread.get("approximate") else {}),
+            }
+            row["principal_inertia"]["range"] = spread
+        given = link_designer_parts(report, g.instance_ids)
+        if given:  # absent unless the designer gave a mass for one of the link's parts
+            row["mass_from_designer_parts"] = given
+            row["mass_label"] = DESIGNER_LABEL
         low = sorted(
             {
                 parts[inst_part[i]].name
@@ -251,6 +276,14 @@ def build_robot(report: Report, payload: Payload | None = None) -> dict[str, Any
     ]
     bodies = {g.id: link_body(report, g.instance_ids, reliable=True) for g in kin.links}
     held = holding_loads(specs, bodies, _up(asm.up_axis), payload)
+    ranges = joint_ranges(
+        report,
+        {g.id: g.instance_ids for g in kin.links},
+        specs,
+        {h.joint: h.value for h in held},
+        _up(asm.up_axis),
+        payload,
+    )
     static_loads: dict[str, Any] = {
         "label": STATIC_LABEL,
         "estimate": "estimate from geometry and density; not measured",
@@ -268,7 +301,14 @@ def build_robot(report: Report, payload: Payload | None = None) -> dict[str, Any
         if payload is None
         else {"mass_kg": payload.mass_kg, "offset_mm": payload.offset_mm},
         "joints": [
-            {"joint": h.joint, "type": h.kind, "value": h.value, "unit": h.unit, "reason": h.reason}
+            {
+                "joint": h.joint,
+                "type": h.kind,
+                "value": h.value,
+                "unit": h.unit,
+                "reason": h.reason,
+                **({"value_range": ranges[h.joint]} if h.joint in ranges else {}),
+            }
             for h in held
         ],
     }
@@ -284,12 +324,38 @@ def build_robot(report: Report, payload: Payload | None = None) -> dict[str, Any
     hedge = frame_hedge(report.warnings)
     if hedge:
         warnings.insert(0, hedge)
-    if any(link["mass_g"] is None for link in links):
+    n_none = sum(link["mass_g"] is None for link in links)
+    if n_none == len(links):
         warnings.insert(
             0,
             "No material is set, so link masses, centres of mass and inertias are unknown: pass "
             "--material or set `material:` in design_context.yaml.",
         )
+    elif n_none:
+        warnings.insert(
+            0,
+            f"{n_none} of {len(links)} links have no mass because their parts have no material: pass "
+            "--material or set `material:` in design_context.yaml (a part can be given its own under `parts:`).",
+        )
+    from_step = sorted(
+        {pid for link in links for pid in link.get("mass_material_from_step_file", [])}
+    )
+    if from_step:
+        warnings.append(
+            "Link masses use the material the STEP file states for these parts, which is not verified "
+            "(CAD tools often assign a default material to every part, check it; or set `material:` "
+            "in design_context.yaml): " + ", ".join(from_step)
+        )
+
+    given_parts = sorted(
+        {pid for link in links for pid in link.get("mass_from_designer_parts", [])}
+    )
+    if given_parts:
+        warnings.append(f"{DESIGNER_LABEL.capitalize()}: " + ", ".join(given_parts) + ".")
+    for p in report.parts:
+        dm = p.mass.designer_mass
+        if dm is not None and not dm.used:
+            warnings.append(f"{p.id}: {dm.note}")
     if complex_bodies:
         warnings.append(
             "These bodies have complex or free-form geometry, so their volume may not be that of a real "
@@ -332,6 +398,33 @@ def build_robot(report: Report, payload: Payload | None = None) -> dict[str, Any
         "warnings": warnings,
     }
     return _round(data)  # type: ignore[no-any-return]
+
+
+def reached_links(robot: dict[str, Any]) -> set[str]:
+    """The base link and every link reached from it through joints (a joint counts only when its parent is
+    reached: a mechanism that nothing ties to the base is not part of the tree)."""
+    reached = {robot["base_link"]}
+    grew = True
+    while grew:
+        grew = False
+        for j in robot["joints"]:
+            if j["parent"] in reached and j["child"] not in reached:
+                reached.add(j["child"])
+                grew = True
+    return reached
+
+
+def joints_in_tree(robot: dict[str, Any]) -> list[dict[str, Any]]:
+    """The joints a URDF can hold: those whose parent link is reached from the base."""
+    reached = reached_links(robot)
+    return [j for j in robot["joints"] if j["parent"] in reached]
+
+
+def unconnected_group_ids(robot: dict[str, Any]) -> list[str]:
+    """Ids of the rigid groups that no joint connects to the base link: a URDF is one tree, so they cannot be
+    placed in it. They stay in robot.json."""
+    reached = reached_links(robot)
+    return [link["id"] for link in robot["links"] if link["id"] not in reached]
 
 
 def robot_json(report: Report, payload: Payload | None = None) -> str | None:

@@ -75,7 +75,10 @@ def test_the_statements_are_labelled_and_never_likely(rich: Path, tmp_path: Path
     assert lines and all(x.startswith("- From the STEP file: ") for x in lines)
     assert not any("Likely" in x for x in lines)
     text = "\n".join(lines)
-    assert "material `Aluminium 6061` (`alloy`), density 2.7 g/cm3; used for the mass." in text
+    assert (
+        "material `Aluminium 6061` (`alloy`), density 2.7 g/cm3; used for the mass (CAD tools often "
+        "assign a default material to every part, check it)."
+    ) in text
     assert "layer `HOUSING`" in text and "colour RGB (0.80, 0.10, 0.10)" in text
     assert "a label, not an instruction" in text
 

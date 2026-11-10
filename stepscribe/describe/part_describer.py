@@ -32,10 +32,12 @@ def shape_label(sc: ShapeClass) -> str:
 def material_text(part: Part) -> str:
     """Material sentence fragment."""
     m = part.mass
+    if m.material_source == "designer_mass":
+        return "density derived from the mass given by the designer"
     if m.material_assumed and m.material_source == "user":
         return f"material {m.material_assumed} (given)"
     if m.material_assumed and m.material_source == "step_file":
-        return f"material {m.material_assumed} (stated in the STEP file)"
+        return f"material {m.material_assumed} (stated in the STEP file; CAD tools often assign a default material to every part, check it)"
     if m.material_assumed:
         return f"material guess {m.material_assumed} from the name (assumed, not measured)"
     return "material unknown"
@@ -73,7 +75,7 @@ def step_lines(part: Part) -> list[str]:
         elif m.density_stated is not None:
             text += f", density {_n(m.density_stated)} in a unit that cannot be read: not used"
         text += (
-            "; used for the mass."
+            "; used for the mass (CAD tools often assign a default material to every part, check it)."
             if m.density_used
             else "; not used for the mass (a designer value, or no density, takes precedence)."
         )
@@ -101,9 +103,14 @@ def step_lines(part: Part) -> list[str]:
 
 def mass_text(part: Part) -> str:
     """Mass fragment."""
+    dm = part.mass.designer_mass
+    if dm is not None and dm.used and part.mass.mass_g is not None:
+        extra = f"; {dm.ratio_note}" if dm.ratio_note else ""
+        return f"{fmt(part.mass.mass_g, 1)} g (mass from designer{extra})"
+    note = f"; {dm.note}" if dm is not None else ""
     if part.mass.mass_g is not None:
-        return f"{fmt(part.mass.mass_g, 1)} g ({material_text(part)})"
-    return "unknown (no material given)"
+        return f"{fmt(part.mass.mass_g, 1)} g ({material_text(part)}{note})"
+    return f"unknown (no material given{note})"
 
 
 def group_by_size(items: list[Any], key: str) -> list[tuple[float, int]]:
@@ -224,7 +231,13 @@ def hole_row(h: Hole) -> dict[str, str]:
         "direction": f"({fmt(d.x, 2)}, {fmt(d.y, 2)}, {fmt(d.z, 2)})",
         "edge": fmt(h.edge_distance_mm, 2) if h.edge_distance_mm is not None else "-",
         "standard": standard_text(h),
-        "threaded": "Likely threaded" if h.likely_threaded else "",
+        "threaded": (
+            f"modelled thread (likely {h.thread.nominal or 'size unclear'})"
+            if h.thread is not None
+            else "Likely threaded"
+            if h.likely_threaded
+            else ""
+        ),
     }
 
 

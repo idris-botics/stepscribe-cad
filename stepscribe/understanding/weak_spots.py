@@ -27,6 +27,7 @@ from stepscribe.understanding.aag import build_aag
 from stepscribe.understanding.kinematics import KinContext, hardware_kind
 from stepscribe.understanding.load_path import LoadInfo
 from stepscribe.understanding.process import min_wall_for
+from stepscribe.understanding.process import rules as process_rules
 
 if TYPE_CHECKING:
     from stepscribe.api import Analysis
@@ -41,7 +42,11 @@ def rules() -> dict:  # type: ignore[type-arg]
 
 
 def top_process(part: Part) -> tuple[str | None, str]:
-    """(process label, assumption text or '') for a part from its understanding."""
+    """(process label, assumption text or '') for a part from its understanding.
+
+    A process the designer declared is used. A guessed one is used only from the confidence in
+    ``guideline_min_confidence`` (0.75); below that no process-specific guideline applies, and the
+    process is None."""
     u = part.understanding
     if u is None or not u.process.ranked:
         return None, ""
@@ -50,7 +55,28 @@ def top_process(part: Part) -> tuple[str | None, str]:
         return None, ""
     if u.process.source == "user":
         return h.label, ""
-    return h.label, f"assumes {h.label.replace('_', ' ')} (inferred, confidence {h.confidence:.2f})"
+    floor = float(process_rules()["guideline_min_confidence"])
+    if h.confidence < floor:
+        return None, (
+            f"process not declared (best guess {h.label.replace('_', ' ')}, confidence "
+            f"{h.confidence:.2f}, below {floor:.2f}); no process-specific guideline used"
+        )
+    return h.label, f"assumes {h.label.replace('_', ' ')} (guessed, confidence {h.confidence:.2f})"
+
+
+def process_tag(part: Part) -> str:
+    """The process and where it comes from, for the end of a weak-spot line."""
+    u = part.understanding
+    if u is None or not u.process.ranked:
+        return " [process: not known]"
+    h = u.process.ranked[0]
+    if u.process.source == "user":
+        name = "not known" if h.label == "unknown" else h.label.replace("_", " ")
+        return f" [process: {name}, declared]"
+    proc, _why = top_process(part)
+    if proc is None:
+        return " [process: not declared; no process-specific guideline]"
+    return f" [process: {proc.replace('_', ' ')}, guessed, confidence {h.confidence:.2f}]"
 
 
 def _spot(
@@ -84,16 +110,18 @@ def _sev(ratio: float) -> str:
 
 
 def _edge_assumption(proc: str | None, why: str) -> str | None:
-    if proc in PLASTIC:
-        return why or None
     if proc is None:
-        return "process unknown: the generic guideline (metal factor) is used"
-    return f"{why}; metal factor used" if why else None
+        return why or "process not declared: the general rule of thumb is used"
+    if (
+        proc in process_rules()["metal_processes"]
+    ):  # "metal factor" is said only where the process is metal
+        return f"{why}; metal factor used" if why else None
+    return why or None
 
 
 def _guideline_name(proc: str | None) -> str:
-    """'the guideline', or 'the generic guideline (process unknown)' when no process is known."""
-    return "the guideline" if proc else "the generic guideline (process unknown)"
+    """'the guideline', or 'the general rule of thumb (process not declared)' when no process applies."""
+    return "the guideline" if proc else "the general rule of thumb (process not declared)"
 
 
 def edge_distance(part: Part, label: str) -> list[WeakSpot]:
@@ -124,7 +152,8 @@ def edge_distance(part: Part, label: str) -> list[WeakSpot]:
                 "edge_distance",
                 [part.id, *[h.id for h in holes]],
                 f"{many if len(holes) > 1 else one} is {fmt(worst.edge_distance_mm, 2)} mm from "
-                f"the nearest edge; {_guideline_name(proc)} is {fmt(factor, 1)} x diameter = {fmt(need, 1)} mm",
+                f"the nearest edge; {_guideline_name(proc)} is {fmt(factor, 1)} x diameter = {fmt(need, 1)} mm"
+                + process_tag(part),
                 f"increase the edge distance to at least {fmt(need, 1)} mm "
                 f"(move the hole {fmt(need - worst.edge_distance_mm, 1)} mm inward)",
                 worst.edge_distance_mm,
@@ -169,7 +198,7 @@ def cutout_web(part: Part, label: str) -> list[WeakSpot]:
             "cutout_web",
             [part.id, *[c.id for c in thin]],
             f"{many if len(thin) > 1 else one} leaves a {fmt(dist, 2)} mm web to the nearest edge or "
-            f"opening; {_guideline_name(proc)} is {fmt(need, 1)} mm",
+            f"opening; {_guideline_name(proc)} is {fmt(need, 1)} mm" + process_tag(part),
             f"widen the web to at least {fmt(need, 1)} mm (move the cut-out {fmt(need - dist, 1)} mm "
             f"or shrink it)",
             dist,
@@ -196,7 +225,8 @@ def thin_wall(part: Part, label: str) -> list[WeakSpot]:
             "thin_wall",
             [part.id],
             f"{label} has a thinnest wall of about {fmt(part.min_wall_thickness_mm, 2)} mm, below the "
-            f"{fmt(need, 1)} mm guideline for {str(proc).replace('_', ' ')} ({source})",
+            f"{fmt(need, 1)} mm guideline for {str(proc).replace('_', ' ')} ({source})"
+            + process_tag(part),
             f"thicken the thinnest wall to at least {fmt(need, 1)} mm",
             part.min_wall_thickness_mm,
             need,
@@ -238,7 +268,8 @@ def sharp_corners(part: Part, geom, label: str, load_bearing: bool) -> list[Weak
             [part.id, *ids[:4]],
             f"{label} has {len(edges)} sharp internal corner(s) {where} (longest {fmt(longest, 1)} mm, faces "
             f"{', '.join(ids[:4])}); stress concentrates there"
-            + (" and printed layers split along them" if plastic else ""),
+            + (" and printed layers split along them" if plastic else "")
+            + process_tag(part),
             "add a fillet of about 2 mm (or a gusset) at the corner",
             float(len(edges)),
             0.0,

@@ -23,7 +23,9 @@ Part and assembly names come from the STEP file and are labels only. They are no
 ## Key facts
 - Overall size: {{ o.size }} (up {{ o.up }}, front {{ o.front }})
 {% if o.mass %}
-- Total mass: {{ o.mass }}{{ ' (estimated from material guesses)' if o.mass_estimated else '' }}
+- Total mass: {{ o.mass }}{{ ' (estimated from material guesses)' if o.mass_estimated else '' }}{{ ' (material stated in the STEP file; CAD tools often assign a default material to every part, check it)' if o.mass_step_file else '' }}
+{% elif o.mass_partial %}
+- Total mass: {{ o.mass_partial }}
 {% else %}
 - Total mass: unknown (no material given; pass --material or --density)
 {% endif %}

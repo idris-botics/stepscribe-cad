@@ -14,6 +14,15 @@ confidence_k: 2.0        # larger = slower to become confident
 complex_geometry:
   min_faces: 100            # simpler parts keep their guess however curved they are
   min_freeform_share: 0.15  # inclusive
+guideline_min_confidence: 0.75  # a process that was only guessed gives no process-specific guideline below this
+# Short words for a declared process (design_context.yaml `process:`, --process, the page's selector).
+declared_words:
+  fdm: fdm_3d_printed
+  sheet: sheet_metal
+  cnc: cnc_milled
+  unknown: unknown          # "I do not know": no process-specific guideline is used, and it is not asked again
+# Processes that make metal parts: only these may be described with the metal edge-distance factor.
+metal_processes: [sheet_metal, laser_or_waterjet, cnc_milled, cnc_turned, extruded_profile]
 fallback_floor: 0.5      # weak evidence that a complex shape is printed when nothing else fires
 
 # Signals and the weight each adds to a process. Comments say why the weight is what it is.

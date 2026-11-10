@@ -29,7 +29,7 @@ from stepscribe.robot_check.fk import (
     rotation_error,
     rpy_matrix,
 )
-from stepscribe.robot_check.model import UrdfError, parse_urdf
+from stepscribe.robot_check.model import MAX_LINKS, UrdfError, parse_urdf
 from stepscribe.robot_check.structural import resolve_mesh
 
 LINK = "<link name='{n}'>{body}</link>"
@@ -271,6 +271,26 @@ def test_text_that_is_not_a_urdf_is_refused_without_a_crash(tmp_path: Path) -> N
         parse_urdf("<robot><link name='a'></robot>")
     with pytest.raises(FileNotFoundError):
         find_urdf(tmp_path / "nothing")
+
+
+def test_more_links_or_joints_than_the_limit_are_refused_and_the_limit_itself_is_read(
+    tmp_path: Path,
+) -> None:
+    assert MAX_LINKS == 5000
+    at_limit = "<robot name='x'>" + "<link name='a'/>" * MAX_LINKS + "</robot>"
+    assert len(parse_urdf(at_limit).links) == MAX_LINKS
+    for text in (
+        "<robot name='x'>" + "<link name='a'/>" * (MAX_LINKS + 1) + "</robot>",
+        "<robot name='x'><link name='a'/>"
+        + "<joint name='j' type='fixed'><parent link='a'/><child link='a'/></joint>"
+        * (MAX_LINKS + 1)
+        + "</robot>",
+    ):
+        with pytest.raises(UrdfError, match="more than 5000 links or joints"):
+            parse_urdf(text)
+        report = validate(write_urdf(tmp_path, text))
+        assert not report.structurally_valid and codes(report.structural) == ["S002"]
+        assert "more than 5000 links or joints" in format_report(report)
 
 
 def test_names_from_the_file_are_labels_not_markup(tmp_path: Path) -> None:

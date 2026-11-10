@@ -85,6 +85,9 @@ class JobState:
     message: str = "starting"
     fraction: float = 0.0
     eta_s: float | None = None
+    eta_text: str = "estimating..."
+    error_log: str | None = None  # the file with the full traceback
+    error_saved: str | None = None  # what the stopped run did and did not save
     elapsed_s: float = 0.0
     done: bool = False
     error: str | None = None
@@ -205,15 +208,19 @@ class App:
                 if kind == "progress":
                     state.stage, state.message = msg["stage"], msg["message"]
                     state.fraction, state.eta_s = msg["fraction"], msg["eta_s"]
+                    state.eta_text = msg.get("eta_text", "estimating...")
                     state.elapsed_s = msg["elapsed_s"]
                 elif kind == "done":
                     state.pack = msg["pack"]
                     state.result = summarise_pack(Path(msg["pack"]))
                     state.fraction, state.eta_s, state.stage = 1.0, 0.0, "done"
+                    state.eta_text = "done"
                     state.message = f"finished in {msg['seconds']} s"
                     state.done = True
                 elif kind == "error":
                     state.error = msg["message"]
+                    state.error_log = msg.get("log")
+                    state.error_saved = msg.get("saved")
                     state.done = True
         finally:
             if not released:
@@ -577,9 +584,12 @@ def make_handler(app: App) -> type[BaseHTTPRequestHandler]:
                     "message": s.message,
                     "fraction": s.fraction,
                     "eta_s": s.eta_s,
+                    "eta_text": s.eta_text,
                     "elapsed_s": s.elapsed_s or time.time() - s.started,
                     "done": s.done,
                     "error": s.error,
+                    "error_log": s.error_log,
+                    "error_saved": s.error_saved,
                     "result": s.result,
                     "job": s.id,
                 },
@@ -869,12 +879,16 @@ def _params(src: dict[str, Any]) -> dict[str, Any]:
     up, front = src.get("up") or "+Z", src.get("front") or "-Y"
     if up not in AXES or front not in AXES:
         raise BadRequest("up and front must be one of " + ", ".join(AXES))
+    process = str(src.get("process") or "").strip().lower()
+    if process and process not in ("fdm", "sheet", "cnc", "unknown"):
+        raise BadRequest("process must be one of fdm, sheet, cnc, unknown")
     image_set = str(src.get("image_set") or "standard")
     if image_set not in IMAGE_SETS:
         raise BadRequest("image_set must be one of " + ", ".join(IMAGE_SETS))
     return {
         "material": material or None,
         "density": density,
+        "process": process or None,
         "up": up,
         "front": front,
         "images": flag("images", True),

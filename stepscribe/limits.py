@@ -9,10 +9,12 @@ from __future__ import annotations
 
 import os
 
-from stepscribe.progress import PRIOR_SECONDS_PER_FACE
+from stepscribe.eta import PRIOR_SECONDS_PER_FACE
 
 FACES_PER_MB = 600  # measured on the robot corpus: about 600 faces per MB of STEP text
-ASSEMBLY_FACTOR = 6.0  # parts plus contacts, from progress.ASSEMBLY_PRIOR_FRACTION + 1
+ASSEMBLY_FACTOR = (
+    6.0  # parts plus contacts, measured: assembly cost is several times the part analysis
+)
 MAX_WORKERS = 8
 LARGE_BYTES = 50 * 1024**2  # over this, warn
 SLOW_SECONDS = 600  # an estimate over this, warn

@@ -90,4 +90,4 @@ def test_the_built_wheel_ships_the_json_schema_unchanged(tmp_path: Path, monkeyp
     assert shipped == (root / "schema" / "report.schema.json").read_bytes()
     from stepscribe.exporter import json_schema
 
-    assert json.loads(shipped) == json_schema()  # still the schema the code produces (0.6.0)
+    assert json.loads(shipped) == json_schema()  # still the schema the code produces (0.7.0)

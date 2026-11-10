@@ -21,6 +21,7 @@ import numpy as np
 from OCP.TopAbs import TopAbs_SOLID
 from OCP.TopoDS import TopoDS_Shape
 
+from stepscribe.config import material_keyword
 from stepscribe.features.bosses import detect_bosses
 from stepscribe.features.cutouts import detect_cutouts
 from stepscribe.features.fillets_chamfers import detect_chamfers, detect_fillets
@@ -140,6 +141,15 @@ def analyze_geom(
         else:
             w.append(f"material '{material}' is not a known keyword; mass left unknown")
     mass = mass_properties(shape, geom.name, density, material)
+    if (
+        mass.mass_g is not None
+    ):  # a range only where the density is an assumption (density_range.py)
+        from stepscribe.geometry import density_range as dr
+
+        if mass.material_source == "name_guess":
+            dr.set_range(mass, mass.material_assumed, dr.NAME_REASON)
+        elif opts.density is None and material and not dr.has_grade(material):
+            dr.set_range(mass, material_keyword(material), dr.FAMILY_REASON)
     topo = topology_summary(shape, geom.table)
     bb, ob = aabb(shape), obb(shape)
     holes: list[Hole] = _guarded("hole detection", [], w, lambda: detect_holes(geom))
@@ -157,7 +167,16 @@ def analyze_geom(
     pockets: list[Pocket] = _guarded("pocket detection", [], w, lambda: detect_pockets(geom, holes))
     wall = None
     if not opts.skip_wall_thickness:
-        wall = _guarded("wall thickness", None, w, lambda: sample_wall_thickness(geom))
+        from stepscribe.features.shape_class import tooth_face_ids
+
+        no_faces: set[str] = set()
+        left_out: set[str] = _guarded(
+            "tooth faces", no_faces, w, lambda: tooth_face_ids(geom, ob, holes)
+        )
+        left_out |= {fid for h in holes if h.thread is not None for fid in h.thread.face_ids}
+        wall = _guarded(
+            "wall thickness", None, w, lambda: sample_wall_thickness(geom, exclude=left_out)
+        )
     shape_class: ShapeClass = _guarded(
         "shape classification",
         ShapeClass(confidence=0.0, evidence="classification failed", label="other"),
@@ -186,6 +205,11 @@ def analyze_geom(
         min_wall_thickness_mm=wall[0] if wall else None,
         warnings=[*geom.warnings, *w],
     )
+    given = opts.extra.get("part_masses", {}).get(geom.name)
+    if given is not None:
+        from stepscribe.geometry.designer_mass import apply_designer_mass
+
+        apply_designer_mass(part, shape, given)
     no_cutouts: tuple[list[Cutout], list[CutoutPattern]] = ([], [])
     part.cutouts, part.cutout_patterns = _guarded(
         "cutout detection", no_cutouts, part.warnings, lambda: detect_cutouts(geom, part)

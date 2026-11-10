@@ -1326,6 +1326,19 @@ def refresh_description(model: KinematicModel, ctx: KinContext) -> None:
     model.mermaid = mermaid(model)
 
 
+def _dof_phrase(model: KinematicModel) -> str:
+    """The degrees of freedom, said as a lower bound when many rigid groups have no joint evidence."""
+    from stepscribe.understanding.unjointed import many_unjointed, unjointed_groups
+
+    if not many_unjointed(model):
+        return f"estimated {model.dof} degree(s) of freedom"
+    free, total = unjointed_groups(model)
+    return (
+        f"{model.dof} degree(s) of freedom from the joints found (at least: {free} of {total} "
+        "rigid groups have no joint evidence, so the real DOF may be higher)"
+    )
+
+
 def describe_kinematics(
     model: KinematicModel, by_id: dict[str, InstanceData], soft_used: list[Conn]
 ) -> str:
@@ -1333,7 +1346,7 @@ def describe_kinematics(
     n_pri = sum(j.kind == "prismatic" for j in model.joints)
     bits = [
         f"{len(model.links)} rigid link(s), {len(model.joints)} joint(s) "
-        f"({n_rev} revolute, {n_pri} prismatic), estimated {model.dof} degree(s) of freedom, "
+        f"({n_rev} revolute, {n_pri} prismatic), {_dof_phrase(model)}, "
         f"topology {model.topology.replace('_', ' ')}"
     ]
     ground = next((g for g in model.links if g.is_ground), None)

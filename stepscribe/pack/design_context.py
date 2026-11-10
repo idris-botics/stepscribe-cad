@@ -16,10 +16,12 @@ CONTEXT_TEMPLATE = """\
 
 purpose: ""            # what the design is for, e.g. "Base frame of a 4-wheel rover"
 manufacturing: ""      # 3D print (FDM/SLA), CNC, laser cut, sheet metal, casting, ...
+process: ""            # how the parts are made, for the guidelines: fdm, sheet, cnc or unknown
 material: ""           # default material for every part, e.g. "aluminium 6061" (keywords: alu, steel, pla, petg, abs, nylon, cf, brass)
 parts:                 # per-part material override, keyed by part name as shown in the pack
   # TopPlate:
   #   material: alu
+  #   mass_g: 412.5      # a mass you measured, in grams: replaces the estimate (closed solids only)
 loads: ""              # expected forces, torques, payload (free text)
 # payload:             # a mass carried at the end of a robot arm: used for the static joint loads
 #   mass_kg: 2.5
@@ -38,6 +40,13 @@ def load_context(path: str | Path) -> dict[str, Any]:
         raw = yaml.safe_load(fh) or {}
     if not isinstance(raw, dict):
         raise ValueError("design context must be a YAML mapping")
+    check_process(
+        raw
+    )  # a `process:` that is not fdm, sheet, cnc or unknown is refused with a plain message
+
+    from stepscribe.geometry.designer_mass import parse_masses
+
+    parse_masses(raw)  # a bad mass_g is refused here, with a message that names the part
     return {k: v for k, v in raw.items() if v not in (None, "", [], {})}
 
 
@@ -154,10 +163,27 @@ def write_answer_stubs(path: str | Path, questions: list[Any]) -> int:
 
 
 def default_process(ctx: dict[str, Any]) -> str | None:
-    """Default manufacturing process from the free-text ``manufacturing`` entry."""
-    from stepscribe.understanding.process import rules, user_process
+    """The declared process (``process:``: fdm, sheet, cnc or unknown), else the one the free-text
+    ``manufacturing`` entry names."""
+    from stepscribe.understanding.process import declared_process, rules, user_process
 
+    declared = declared_process(ctx.get("process"))
+    if declared is not None:
+        return declared
     return user_process(str(ctx.get("manufacturing") or ""), rules())
+
+
+def check_process(ctx: dict[str, Any]) -> None:
+    """ValueError with a plain message when ``process:`` is not one of the accepted words."""
+    from stepscribe.understanding.process import declared_process
+
+    value = ctx.get("process")
+    if (
+        value is not None and str(value).strip() and declared_process(value) is None
+    ):  # empty = not declared
+        raise ValueError(
+            f"design_context.yaml, process: {ctx['process']!r} must be one of fdm, sheet, cnc, unknown"
+        )
 
 
 def part_processes(ctx: dict[str, Any]) -> dict[str, str]:
@@ -179,8 +205,15 @@ def apply_context(opts: Any, ctx: dict[str, Any]) -> None:
     if opts.material is None and opts.density is None:
         opts.material = default_material(ctx)
     opts.extra["part_materials"] = part_materials(ctx)
+    from stepscribe.geometry.designer_mass import parse_masses
+
+    masses = parse_masses(ctx)
+    if masses:  # absent without a designer mass, so a run without one is unchanged
+        opts.extra["part_masses"] = masses
     proc = default_process(ctx)
-    if proc:
+    if (
+        proc and "default_process" not in opts.extra
+    ):  # --process or the page's selector wins over the file
         opts.extra["default_process"] = proc
     opts.extra["part_processes"] = part_processes(ctx)
     opts.extra["context"] = ctx

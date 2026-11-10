@@ -169,6 +169,8 @@
     <h2 class="step2"><span class="step">2</span>Options <span class="mute">all optional</span></h2>
     <p class="lead">Images with dimensions and the collision check are always included; the image set decides how many.</p>
     <div class="row fields opts">
+      <label>Process<select id="process"><option value="">not declared (asked later)</option><option value="fdm">3D printed (FDM)</option><option value="sheet">sheet metal</option><option value="cnc">CNC machined</option><option value="unknown">I do not know</option></select>
+        <span class="hint">How the parts are made: it sets the wall and edge guidelines. Without it, a guess below 0.75 confidence gives no process guideline.</span></label>
       <label>Material<input type="text" id="material" placeholder="alu, steel, pla, petg...">
         <span class="hint">Gives each part a mass. Empty: mass unknown.</span></label>
       <label>Density (g/cm³)<input type="number" id="density" step="0.01" min="0">
@@ -272,7 +274,7 @@ api('/api/samples').then(r => r.json()).then(list => {
 });
 
 function params() {
-  return { material: $('material').value, density: $('density').value, up: $('up').value, front: $('front').value,
+  return { process: $('process').value, material: $('material').value, density: $('density').value, up: $('up').value, front: $('front').value,
            images: true, image_set: $('imageset').value, interference: true };
 }
 $('go').onclick = async () => {
@@ -305,10 +307,10 @@ async function poll() {
   const s = await (await api('/api/status?id=' + jobId)).json();
   $('fill').style.width = Math.round(s.fraction * 100) + '%'; $('fill').dataset.pct = s.done ? '' : Math.round(s.fraction * 100) + ' %';
   $('progMsg').textContent = `${s.stage}: ${s.message}`;
-  $('progEta').textContent = s.done ? `Elapsed ${fmtT(s.elapsed_s)}` : `Elapsed ${fmtT(s.elapsed_s)}; remaining ${fmtEta(s.eta_s)} (the estimate improves as parts finish)`;
+  $('progEta').textContent = s.done ? `Elapsed ${fmtT(s.elapsed_s)}` : `Elapsed ${fmtT(s.elapsed_s)}; remaining ${s.eta_text || fmtEta(s.eta_s)} (a rough estimate that improves as the run goes on)`;
   if (s.done) {
     clearInterval(timer); $('go').disabled = false; $('cancel').disabled = true;
-    if (s.error) { $('progTitle').textContent = 'Stopped'; $('err').textContent = s.error; return; }
+    if (s.error) { $('progTitle').textContent = 'Stopped'; $('progCancelRow').style.display = 'none'; $('err').textContent = [s.error, s.error_saved, s.error_log ? 'Full details (the traceback): ' + s.error_log : ''].filter(Boolean).join('\n'); return; }
     $('progTitle').textContent = 'Done'; $('progCard').classList.add('done'); result = s.result; show(s); reveal($('progCard'));
   }
 }
